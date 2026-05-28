@@ -1,8 +1,8 @@
 # Nano
 
-面向本地开发任务的 Agent Harness。Nano 以 Java CLI 为入口，把模型调用、工具执行、上下文管理、MCP 外部工具和人工审批统一到一套可运行的本地 Agent 流程中，用自然语言完成代码检索、文件修改、命令执行、网页读取和多步骤开发任务。
+Nano 的设计灵感是一只住在终端里的小猫：平时安静趴在项目旁边，需要时会跳起来帮你读代码、改文件、跑命令、查网页，还会在动手前确认高风险操作。它以 Java CLI 为入口，把模型调用、工具执行、上下文管理、MCP 外部工具和人工审批统一到一套可运行的本地 Agent Harness 中。
 
-项目目标不是做一个聊天壳，而是沉淀一套接近 Claude Code 工作方式的本地开发 Agent：轻量任务走 ReAct，复杂任务走 Plan-and-Execute，多角色任务走 Multi-Agent，并通过 Memory、ToolRegistry、MCP、HITL 和审计机制保证执行链路可控、可追踪、可扩展。
+她是面向本地开发任务的多模式 Agent：轻量问题走 ReAct，复杂需求走 Plan-and-Execute，多角色任务交给 Multi-Agent 协作；底层通过 Memory、ToolRegistry、MCP、HITL 和审计机制，让自然语言驱动的代码检索、文件修改、命令执行和浏览器操作尽量可控、可追踪、可扩展。
 
 ## Startup
 

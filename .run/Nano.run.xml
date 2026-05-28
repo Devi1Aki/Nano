@@ -1,0 +1,17 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Nano" type="Application" factoryName="Application">
+    <envs>
+      <env name="NANO_RENDERER" value="plain" />
+      <env name="NANO_HOME" value="$PROJECT_DIR$/.nano" />
+      <env name="NANO_LOG_DIR" value="$PROJECT_DIR$/.nano/logs" />
+      <env name="NANO_TASK_DIR" value="$PROJECT_DIR$/.nano/tasks" />
+      <env name="NANO_RUNTIME_DIR" value="$PROJECT_DIR$/.nano/runtime" />
+      <env name="NANO_MCP_STARTUP_WAIT_SECONDS" value="1" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="com.nano.cli.Main" />
+    <module name="nano" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

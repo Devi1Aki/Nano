@@ -1,0 +1,25 @@
+<configuration>
+    <property name="LOG_DIR" value="${nano.log.dir:-${user.home}/.nano/logs}"/>
+    <property name="LOG_LEVEL" value="${nano.log.level:-INFO}"/>
+    <property name="LOG_MAX_HISTORY" value="${nano.log.maxHistory:-7}"/>
+    <property name="LOG_MAX_FILE_SIZE" value="${nano.log.maxFileSize:-10MB}"/>
+    <property name="LOG_TOTAL_SIZE_CAP" value="${nano.log.totalSizeCap:-100MB}"/>
+
+    <appender name="ROLLING_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/nano.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/nano.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>${LOG_MAX_FILE_SIZE}</maxFileSize>
+            <maxHistory>${LOG_MAX_HISTORY}</maxHistory>
+            <totalSizeCap>${LOG_TOTAL_SIZE_CAP}</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+    </appender>
+
+    <root level="${LOG_LEVEL}">
+        <appender-ref ref="ROLLING_FILE"/>
+    </root>
+</configuration>

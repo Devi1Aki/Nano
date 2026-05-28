@@ -1,246 +1,17 @@
 # Nano
 
-面向本地开发任务的 Agent Harness。项目以 Java Agent CLI 为入口，对标 Claude Code，统一模型调用、工具执行、上下文管理、MCP 外部工具接入和 HITL 安全审批链路。
+面向本地开发任务的 Agent Harness。Nano 以 Java CLI 为入口，把模型调用、工具执行、上下文管理、MCP 外部工具和人工审批统一到一套可运行的本地 Agent 流程中，用自然语言完成代码检索、文件修改、命令执行、网页读取和多步骤开发任务。
 
-当前进度：已完成第 16.1 期 inline 流式 TUI 形态修正、第 17 期 `LSP 诊断注入` MVP、第 18 期 `Git Side-History 快照与回滚` MVP、第 19 期 `Prompt 分层架构` MVP、第 20 期 `异步后台任务 + Runtime API` MVP、第 21 期 `图片复制粘贴输入` MVP。
+项目目标不是做一个聊天壳，而是沉淀一套接近 Claude Code 工作方式的本地开发 Agent：轻量任务走 ReAct，复杂任务走 Plan-and-Execute，多角色任务走 Multi-Agent，并通过 Memory、ToolRegistry、MCP、HITL 和审计机制保证执行链路可控、可追踪、可扩展。
 
-## 测试策略
-
-日常开发不需要每次都跑全量测试。`mvn clean package` 默认跳过测试，优先产出可手工验收的 jar；需要回归时按改动范围选择：
-
-```bash
-# 第 16 期终端 / TUI / inline renderer 冒烟
-mvn test -Pphase16-smoke
-
-# 常规快速回归，跳过外部进程 / 网络超时 / 命令超时类慢测试
-mvn test -Pquick
-
-# 发版或大范围重构前再跑全量
-mvn test -DskipTests=false
-```
-
-## 演进历程
-
-### 第一期：ReAct Agent CLI
-
-- 单轮对话驱动的 `ReAct` 循环
-- 支持工具调用：读文件、写文件、列目录、执行命令、创建项目、代码语义检索、联网搜索、MCP 动态工具
-- 更适合简单任务或单步操作
-
-### 第二期：Plan-and-Execute + DAG
-
-- 在保留 `ReAct` 模式的基础上新增复杂任务规划能力
-- 支持先拆解任务，再按照依赖顺序执行
-- 新增 `/plan` 入口，以一次性计划执行方式增强默认的 `ReAct`
-- 计划生成后，会先与用户确认再执行
-- 更适合多步骤、带依赖关系的复杂任务
-
-### 第三期：Memory + 上下文工程
-
-- 短期记忆管理当前对话与工具结果
-- 长期记忆通过 `/save <事实>` 或用户明确说“记一下 / 记住”时的 `save_memory` 保存关键事实，跨会话复用
-- 注入给模型的相关记忆只使用长期稳定事实，不把当前轮短期对话误当成“历史记忆”
-- 对话接近预算时自动做摘要压缩
-- 新增 `/memory` 查看状态、`/memory clear` 清空长期记忆、`/save` 手动保存事实；Agent 在用户明确说“记一下 / 记住”时可调用 `save_memory`
-
-### 第四期：RAG 检索 + 代码库理解
-
-- 代码向量化（Embedding），支持本地 Ollama 和远程 API
-- SQLite 持久化 + 余弦相似度语义检索
-- 代码分块（文件/类/方法粒度）与 AST 解析
-- 代码关系图谱（extends/implements/imports/calls/contains）
-- 新增 `/index`、`/search`、`/graph` CLI 命令
-- Agent 自动调用 `search_code` 工具理解代码库
-
-### 第五期：Multi-Agent 协作 + 角色分工
-
-- 三个角色：规划者（Planner）、执行者（Worker）、检查者（Reviewer）
-- 主从架构：编排器（Orchestrator）协调子代理（SubAgent）
-- 规划者拆解任务 -> 执行者执行 -> 检查者审查质量
-- 审查未通过时带反馈重试（最多 2 次），冲突自动解决
-- 新增 `/team` CLI 命令，进入多 Agent 协作模式
-
-### 第六期：Human-in-the-Loop + 审批流
-
-- 危险操作静态规则识别：`write_file`、`execute_command`、`create_project`、`revert_turn`
-- 三级危险等级：高危（`execute_command`）、中危（`write_file` / `create_project`）
-- 审批决策：批准 / 全部放行 / 拒绝 / 跳过 / 修改参数后执行
-- HITL 默认关闭，通过 `/hitl on` 启用
-- 新增 `/hitl` CLI 命令，支持 `/hitl on`、`/hitl off`、`/hitl`（查看状态）
-
-### 第七期：异步执行 + 并行工具调用
-
-- 同一轮 LLM 返回多个 `tool_calls` 时，工具层会并行执行
-- ReAct、Plan-and-Execute、Multi-Agent Worker 都复用统一的批量工具执行入口
-- 工具结果仍按原始 `tool_call` 顺序回灌，保证消息历史协议稳定
-- 批量工具调用有统一超时与取消兜底，单个 `execute_command` 仍保留 60 秒命令级超时
-- Plan-and-Execute 与 Multi-Agent 已支持按依赖批次并行执行独立任务
-
-### 第八期：多模型适配 + 运行时切换
-
-- `LlmClient` 接口抽象 + `AbstractOpenAiCompatibleClient` 模板基类
-- 内置 `GLMClient`、`DeepSeekClient`、`StepClient`、`KimiClient` 四个瘦实现
-- `/model glm-5.1` / `/model glm-5v-turbo` 明确切 GLM 模型；`/model deepseek` / `/model step` / `/model kimi` 切 provider 并读取配置里的具体模型
-- 配置持久化到 `~/.nano/config.json`，API Key 可从配置、环境变量或 `.env` 读取
-
-### 第九期：联网能力 + Web 工具
-
-- `web_search` 抽象成 `SearchProvider` 接口，内置三个实现：智谱 Web Search（默认，与 GLM 共用 Key，0.01–0.05 元/次）、SerpAPI（国际通用付费）、SearXNG（开源自托管免费）
-- `web_fetch` 新工具：URL → OkHttp 抓取 → Jsoup 解析 → 简易 readability → Markdown 正文
-- 默认安全策略：屏蔽 `file://` / 内网 / loopback；30 秒超时；5MB 响应上限；每分钟 30 次限流
-- 边界明确：SPA / 防爬墙站点会返回空正文 + 已知边界提示，Agent 会 fallback 到浏览器 MCP 路线
-
-### 第十期：MCP 协议核心
-
-- 新增 `com.nano.mcp` 模块，支持 stdio 子进程 server 与 Streamable HTTP 远程 server
-- 启动时读取 `~/.nano/mcp.json` 与 `.nano/mcp.json`，项目级配置按 server 名覆盖用户级配置
-- MCP 工具自动注册为 `mcp__{server}__{tool}`，参数 schema 会清洗 `$ref` / `anyOf` / 超长 description，降低模型调用失败率
-- 所有 MCP 工具默认走 HITL 审批和审计，审计参数会脱敏 token / key / password / Authorization / Bearer 凭证
-- 支持 MCP resources：server 声明 `resources` capability 后，自动注册 `mcp__{server}__list_resources` / `mcp__{server}__read_resource` 虚拟工具
-- 普通输入支持 `@server:protocol://path` 显式引用 resource，提交给 Agent 前展开为 `<resource>` 内联块
-- 被动处理 `notifications/tools/list_changed`、`notifications/resources/list_changed`、`notifications/resources/updated`
-- 运行中输入 `/cancel` 并回车可请求取消当前 Agent run
-- CLI 命令：`/mcp`、`/mcp restart <name>`、`/mcp logs <name>`、`/mcp disable <name>`、`/mcp enable <name>`、`/mcp resources <name>`、`/mcp prompts <name>`
-- `~/.nano/mcp.json` 不存在时会自动创建默认 chrome-devtools 配置；项目级 `.nano/mcp.json` 仍可按 server 名覆盖
-
-### 第十二期：长上下文工程
-
-- `LlmClient` 声明模型能力：`maxContextWindow()`、`supportsPromptCaching()`、`promptCacheMode()`
-- GLM-5.1 默认 200k window，DeepSeek V4 默认 1M window，StepFun 默认 256k window，Kimi K2.6 默认 256k window
-- `AgentBudget` 按当前模型动态计算预算，默认 `80% * maxContextWindow`，仍可用系统属性覆盖
-- short / balanced / long 三种上下文模式：长上下文模式跳过摘要压缩，RAG 默认 topK 提升到 20
-- `search_code` 未显式传 `top_k` 时按上下文模式自适应
-- 长上下文模式下自动把 MCP resources 的 URI / 描述索引注入 system prompt，不自动注入正文
-- inline 模式下 Token / cached input tokens / 估算成本 / 耗时进入底部状态栏，避免占用正文输出区
-- `/context` 会显示当前上下文模式、prompt cache 模式、RAG topK、resources 自动索引状态
-
-### 第十三期：Chrome DevTools MCP
-
-- 默认接入 Google 官方 `chrome-devtools-mcp@latest`，注册为 `mcp__chrome-devtools__navigate_page`、`take_snapshot`、`click`、`fill_form` 等浏览器工具
-- `~/.nano/mcp.json` 不存在时启动自动创建模板，默认使用 `--isolated=true` 临时浏览器 profile
-- 用于处理 SPA / JS 渲染 / 防爬墙 / 表单交互页面；微信公众号文章、知乎专栏、推特、小红书等 `web_fetch` 失败站点会引导走浏览器 MCP
-- HITL 的“全部放行”支持 MCP server 维度，连续浏览器操作可对 `chrome-devtools` 一次确认
-- `image` 类型结果会作为图片输入附加到下一轮；文本 fallback 仍保留，用于日志、人类可读摘要和 API 不接受图片时的上下文
-- MCP initialize 默认超时为 60 秒；CLI 首屏默认最多等待 8 秒，超时后先进入交互，未完成的 server 保持 `starting` 并在后台继续启动，可用 `/mcp` 和 `/mcp logs <name>` 追踪
-
-### 第十四期：CDP 会话复用 + 登录态访问
-
-- 新增 `/browser status`、`/browser connect [port]`、`/browser disconnect`、`/browser tabs` 命令组，并给 Agent 暴露内部 `browser_connect` / `browser_disconnect` / `browser_status` 工具
-- 默认仍使用 `--isolated=true` 临时浏览器 profile；执行 `/browser connect` 后，运行时把 `chrome-devtools` 切到 `--autoConnect`，复用已在 `chrome://inspect/#remote-debugging` 允许远程调试的登录态 Chrome
-- Agent 遇到登录页、权限不足或明确需要登录态页面时，会先调用 `browser_connect` 自动切到 shared；公开页面如微信公众号文章不提前切换
-- `/browser connect <port>` 保留旧式 CDP 端口兼容路径：先探活 `127.0.0.1:<port>/json/version`，成功后切到 `--browser-url=http://127.0.0.1:<port>`；失败时不会改 MCP 启动参数，并输出 macOS / Windows / Linux 的 Chrome 启动命令
-- 切换 shared / isolated 模式都会清空 `chrome-devtools` 的 server 维度全部放行，避免旧信任跨模式延续
-- shared 模式下 `close_page` 只能关闭 Nano 自己创建的 tab；无法证明是 Nano 创建的 tab 会被策略层拒绝
-- 敏感页面命中规则后，`click` / `fill_form` / `evaluate_script` 等改写型浏览器工具必须单步 HITL 审批，不复用全部放行；读型工具如 `take_snapshot` 仍可继续使用
-- 审计日志为 chrome-devtools 工具追加可选浏览器 metadata：`browser_mode`、`sensitive`、`target_url`，旧格式 JSONL 仍可读取
-
-### 第十五期：Skill 系统 + 内置 web-access skill
-
-把"Agent 该怎么思考"从硬编码 system prompt 抽出，沉淀成可复用单元。每个 Skill 是一个目录：`SKILL.md`（决策手册）+ `references/`（按需读取）+ 可选 `scripts/`（可执行依赖）。
-
-- 三层加载位置（按优先级，后者整体覆盖同名 skill）：jar 内置 < 用户级 `~/.nano/skills/<name>/` < 项目级 `<project>/.nano/skills/<name>/`
-- 启动期把启用 skill 的 `name` + `description` 注入三处 Agent 系统提示词索引段（启用上限 20 个，索引段 ≤ 4KB）
-- 内置工具 `load_skill(name)`：LLM 在 system prompt 看到匹配 description 时主动调用，Nano 把 SKILL.md 正文（5KB 截断）写入 `SkillContextBuffer`，下一轮 user message 自动前置注入
-- 内置 web-access skill：决策手册（浏览哲学四步法 + 工具选择表 + 浏览器优先级 + Jina 兜底说明）+ 6 个站点经验文件（mp.weixin / zhuanlan.zhihu / x.com / xiaohongshu / github / juejin）+ cdp-cheatsheet
-- frontmatter 走手写 YAML 子集解析，不引 SnakeYAML；解析失败 stderr 警告但不阻塞启动
-- CLI 命令：`/skill list` / `/skill show <name>` / `/skill on <name>` / `/skill off <name>` / `/skill reload`
-- 启用状态持久化：`~/.nano/skills.json` 的 `disabled` 列表，默认全启用
-- 与 HITL 协同：Skill 内调用 `execute_command` 等危险工具仍走既有 HITL 审批，沿用 `execute_command` 工具维度全放行；不给 Skill 单独审批维度
-
-设计意图：从「写工具」演进到「打包专家手册」。当工具堆成山（Nano 当前内置 9 个 + MCP 60+ 工具），用 Skill 给 LLM 一份按场景展开的"专家手册"，比往 system prompt 里塞更多规则更可扩展。
-
-### 第十六期：TUI 产品化（v16.1 形态修正后：双形态可切换）
-
-v16.1 抽出 `Renderer` 接口 + 三个实现：
-
-| 形态 | 启用方式 | 视觉风格 |
-|---|---|---|
-| **inline 流式 TUI**（默认） | 直接运行 / `NANO_RENDERER=inline` | Claude Code / Qoder 风格：π 主题彩色开屏、主屏直出、transcript 当前位置的 `* ` 输入提示、JLine `Status` 托管的底部 dock（YOLO/HITL、MCP、Skill、model、ctx、token、cwd）、右侧输入提示、行内可折叠工具块（`Read 3 files (ctrl+o to expand)`）、行内 git diff、HITL 单字符 `[y/n/a/s/m]` 提示 |
-| **lanterna 全屏 TUI** | `NANO_RENDERER=lanterna`（或兼容旧 `NANO_TUI=true`） | v16 三栏全屏：文件树 + 对话流 + 状态栏 + 底部输入栏，HITL 模态弹窗 |
-| **plain 兜底** | `NANO_RENDERER=plain` | 纯 println，无折叠 / 状态栏，等价 v15 行为 |
-
-- 三种形态共享同一套 `Agent` / `ToolRegistry` / `MemoryManager` / MCP server / SkillRegistry / HITL handler，不创建孤立空会话
-- 普通输入走 ReAct；`/plan <任务>` 走 Plan-and-Execute；`/team <任务>` 走 Multi-Agent；`/cancel` 可取消运行中任务
-- 通用命令：`/clear`、`/context`、`/memory`、`/memory clear`、`/save <事实>`、`/hitl`、`/hitl on`、`/hitl off`、`/config`、`/exit`
-- 对话历史保存到 `~/.nano/history/session_*.jsonl`
-- 兼容旧设置：`NANO_TUI=true` 自动映射为 `NANO_RENDERER=lanterna`（已 deprecated）
-- `NANO_NO_STATUSBAR=true` 在 inline 模式下禁用 JLine 底部 dock（不适合 ANSI 光标控制的终端）
-- `NO_COLOR=1` 禁用所有 ANSI 颜色，保留布局
-
-### 第十七期：LSP 诊断注入（MVP）
-
-- `write_file` 成功后触发 post-edit 诊断，诊断结果不会阻塞工具主流程
-- 当前 MVP 对 Java 文件使用 JavaParser 做轻量语法诊断，不依赖本机安装 JDT LS
-- ReAct、Plan-and-Execute、Multi-Agent 三条路径都会在下一轮 LLM 请求前注入 pending 诊断
-- 诊断按 error / warning / info、文件、行列号、message 格式化，默认最多注入 20 条
-- 配置：`NANO_LSP_ENABLED=false` 可关闭，`NANO_LSP_MAX_DIAGNOSTICS=20` 可调整注入上限
-- 后续增强：接入 JDT LS / rust-analyzer / pyright / gopls 的 stdio JSON-RPC transport
-
-### 第十八期：Git Side-History 快照与回滚（MVP）
-
-- 每个 ReAct / Plan / Team turn 开始前创建 `pre-turn` 快照，结束后异步创建 `post-turn` 快照
-- 快照仓库使用 JGit 纯 Java 实现，默认位于 `~/.nano/snapshots/<project_hash>/<worktree_hash>/.git`，不写用户项目 `.git`
-- `/snapshot` 查看最近快照，`/snapshot status` 查看配置与 side-git 目录，`/snapshot clean` 清理当前项目快照目录
-- `/restore <N>` 恢复到最近第 N 个 `pre-turn` 快照；恢复前会先创建 `pre-restore` 快照
-- Agent 内置 `revert_turn` 工具，纳入 HITL 与 AuditLog 危险工具链
-- 配置：`NANO_SNAPSHOT_ENABLED=false` 可关闭，`NANO_SNAPSHOT_MAX=50`、`NANO_SNAPSHOT_EXCLUDES=...`、`NANO_SNAPSHOT_DIR=...` 可调整策略
-
-### 第十九期：Prompt 分层架构（MVP）
-
-- ReAct、Plan task executor、Multi-Agent 三角色、Planner 的 system prompt 已从 Java 硬编码抽离到 `src/main/resources/prompts/`
-- `PromptAssembler` 按 `base -> personality -> mode -> approval -> project_context -> skills -> context_mgmt -> handoff` 组装，动态上下文靠后注入
-- 支持用户级覆盖 `~/.nano/prompts/...`，支持项目级覆盖 `.nano/prompts/...`，项目级优先级最高
-- 覆盖是整文件替换；`base.md` 和最终 prompt 必须包含 `## Language`
-- Prompt 改动审计模板见 `docs/prompt-analysis-template.md`
-
-### 第二十期：异步后台任务 + Runtime API（MVP）
-
-- `DurableTaskManager` 使用 SQLite 持久化后台任务队列，默认位置 `~/.nano/tasks/tasks.db`
-- 任务生命周期：`enqueued -> running -> completed / failed / canceled`
-- `/task`、`/task add <任务内容>`、`/task cancel <task_id>`、`/task log <task_id>` 提供 CLI 闭环
-- Worker Pool 默认 2 个后台 worker，可通过 `NANO_TASK_WORKERS` 调整
-- `java -jar target/nano-1.0-SNAPSHOT.jar serve --http --port 8080` 启动 localhost Runtime API
-- Runtime API 端点：`POST /v1/threads`、`POST /v1/threads/{id}/turns`、`GET /v1/threads/{id}/events`
-- Runtime API 强制要求 `NANO_RUNTIME_API_KEY` 或 `-Dnano.runtime.api.key`
-- 详细文档见 `docs/phase-20-runtime-api.md`
-
-### 第二十一期：图片复制粘贴输入（MVP）
-
-- `LlmClient.Message` 支持 `ContentPart`，包括 `text`、`image_base64`、`image_url`
-- 请求体在含图片时输出带图片块的 content array，纯文本仍保持 string content
-- `LlmClient` 公共接口不做图片能力声明；输入层只负责读取、压缩、附加图片，provider API 负责最终接收或返回错误
-- GLM 套餐用户可通过 `/model glm-5v-turbo` 切换到 GLM-5V-Turbo 多模态模型，再用 Ctrl+V 或 `@image:` 输入图片；本地 base64 图片会按智谱格式写入 `image_url.url`
-- MCP `image` content 会保留 base64 与 `mimeType`，在 ReAct / Plan / SubAgent 工具结果后作为图片 user message 回灌
-- 用户可通过 `@image:file:///abs/path.png`、`@image:/abs/path.png` 或 `@image:relative/path.png` 引用本地图片
-- 本地图片和 MCP 图片都会按 Claude Code 同类策略预处理：不是 OCR 成文本，而是压缩 / 缩放后作为图片块发送；带 alpha 的 PNG 会铺白底重编码；额外注入来源、尺寸和坐标映射元信息
-- 本地 `@image:` 消息会要求模型优先分析本轮图片；除非用户明确要求结合历史，历史对话和历史工具结果不能替代当前图片内容
-- 新一轮 ReAct / SubAgent 任务开始前会省略历史 image payload，仅保留文本元信息，避免旧截图反复进入上下文；模型 `reasoning_content` 只写日志 / 展示，不回传进下一轮请求历史
-- 当前边界：不做视频 / 音频、图像生成、TUI sixel 图片预览
-
-### 第六期 HITL 增强（路径围栏 / 命令快速拒绝 / 操作审计）
-
-`com.nano.policy` 包，作为 HITL 之外的辅助层（不是沙箱、不提供进程隔离）：
-
-- `PathGuard` 路径围栏：文件类工具强制限定在项目根之内，拦截绝对路径外逃 / `..` 穿越 / 符号链接逃逸
-- `CommandGuard` 命令快速拒绝：HITL 之前的 fast-fail 黑名单（`sudo` / `rm -rf 全盘` / `mkfs` / `dd of=/dev` / fork bomb / `curl|sh` / `find /` / `chmod 777 /` / `shutdown`），减少 HITL 弹窗骚扰
-- `AuditLog` 结构化审计：危险工具调用按天写 JSONL 到 `~/.nano/audit/`，含 `outcome (allow|deny|error)` 与 `approver (hitl|policy|none)`；`revert_turn` 也纳入危险工具链
-- `write_file` 单文件 5MB 上限
-- CLI 命令：`/policy` 查看安全策略状态、`/audit [N]` 看最近 N 条审计
-
-**为什么不叫沙箱**：本地 Agent CLI（参考 Claude Code / Cursor / Aider）默认都不做容器/VM 沙箱——沙箱削弱 Agent 能力、给虚假安全感、体验更差。生产级 Agent 沙箱实际是 microVM-level（Devin / Modal / Anthropic Computer Use 用 Firecracker / gVisor）。Nano 的安全模型是 **HITL + 路径校验 + 命令快速拒绝 + 审计**，不是隔离。
-
-## 启动界面
-
-### 当前启动界面
-
-当前启动输出以命令行实际产物为准：
+## Startup
 
 ```text
-   ████████    Nano π  v16.1.0
-     ██  ██    Model step-3.5-flash-2603 (step)
-     ██  ██    MCP 4/4 · 61 tools · 2/2 skills · ReAct
-     ██  ██    ReAct · Plan · MCP · Browser · Image
-     ██  ██
+   /\_/\      Nano  v16.1.0
+   ( o.o )    Model glm-5.1 (glm)
+    > ^ <     MCP 4/4 · 61 tools · 2/2 skills · ReAct
+               ReAct · Plan · MCP · Browser · Image · Tools · Memory · RAG
+               Agent Harness for local development tasks
 
 Tips for getting started:
 1. Type / for commands and Tab completion
@@ -248,478 +19,279 @@ Tips for getting started:
 3. Attach context with @path or @image:
 ```
 
-## 功能
+## Features
 
-### 第一期
+- Agent Harness：统一模型接入、工具调用、会话状态、上下文压缩和运行渲染，三种任务模式共享同一套执行底座。
+- ReAct / Plan / Team：默认 ReAct 处理轻量任务，`/plan` 生成计划并按依赖执行，`/team` 通过 Planner / Worker / Reviewer 完成协作任务。
+- Memory & Context：短期记忆管理当前对话，长期记忆跨会话持久化，conversationHistory 维护真实发送给 LLM 的消息队列，并在上下文接近窗口时触发摘要压缩。
+- Tool Calling：文件读写、目录扫描、Shell 命令、项目创建、代码检索、网页搜索等能力封装为 Function Calling 工具，支持多 tool_calls 并行执行和顺序回灌。
+- MCP Integration：支持 stdio 和 Streamable HTTP 两类 MCP Server，自动发现 tools/list 并注册到 ToolRegistry，外部工具命名为 `mcp__{server}__{tool}`。
+- HITL & Audit：写文件、执行命令、创建项目、回滚等高风险操作支持人工确认，结合路径围栏、危险命令拦截和 JSONL 审计日志降低本地执行风险。
+- RAG Code Search：基于 JavaParser 做代码分块，支持文件 / 类 / 方法粒度索引，结合向量检索和关键词检索辅助 Agent 理解本地代码库。
+- Browser & Web：静态网页优先走 `web_fetch`，SPA / 登录态 / 防爬页面可通过 Chrome DevTools MCP 读取 DOM 快照和执行浏览器操作。
 
-- 🤖 基于 GLM-5.1 的智能对话
-- 🔄 ReAct Agent 循环（思考-行动-观察）
-- 🛠️ 工具调用（文件操作、Shell命令、项目创建、代码语义检索、联网搜索、MCP 动态工具）
-- 💬 交互式命令行界面
-- 📝 普通任务提交后会先把本轮原始 prompt 以 `>` 暗色整行块写回 transcript；输入态仍显示 `* `，单行提交只占一行，不额外追加空白行。随后再进入 Thinking / 工具调用，避免 dock 刷新或 activity 重绘后用户输入从可见历史里消失
-- 🧠 默认通过流式接口获取模型输出；inline ReAct 用固定高度 live thinking 区动态预览 reasoning，content / tool call 开始前清掉 live 区并把完整 reasoning 引用块落到 transcript，回答正文用低调标记起始；web_search / web_fetch 会在折叠头展示 query / URL，并在执行后输出一行结果摘要
-- 🖥️ 终端会对常见 Markdown（标题、列表、表格、代码块）做渲染后再显示，避免直接暴露原始标记符号
+## Architecture
 
-### 第二期
+```text
+User Input
+   |
+   v
+CLI / Renderer / Command Parser
+   |
+   +--> ReAct Agent
+   +--> Plan-and-Execute Agent
+   +--> Multi-Agent Orchestrator
+             |
+             v
+      ToolRegistry / MCP Bridge / HITL
+             |
+             v
+  File System · Shell · RAG · Web · Browser · Runtime API
 
-- 📋 Plan-and-Execute + DAG 任务拆解与顺序执行
-- ⌨️ `/plan` 一次性进入计划执行
-- 🧭 更清晰的复杂任务执行顺序与依赖展示
-- ⚖️ 简单任务会自动生成最小计划，不再为了凑步数扩展无关步骤
+MemoryManager / ConversationHistoryCompactor / SnapshotService
+贯穿三条执行路径，负责记忆注入、上下文治理和执行快照。
+```
 
-### 第三期
+核心模块：
 
-- 🧠 短期记忆、长期记忆与相关记忆检索
-- 📦 长对话摘要压缩与 Token 预算管理
-- 🧮 长上下文动态预算、prompt cache 可见化与成本估算
-- 💾 `/memory` 与 `/save` 记忆管理入口
+```text
+src/main/java/com/nano/
+├── agent/       ReAct、Plan-and-Execute、Multi-Agent 编排
+├── cli/         命令解析、交互入口、补全、高亮、历史记录
+├── tool/        内置工具注册、Function Calling 执行与结果回灌
+├── mcp/         MCP 客户端、server 管理、transport、resources
+├── memory/      短期记忆、长期记忆、上下文压缩
+├── rag/         代码索引、分块、向量存储、代码检索
+├── hitl/        人工审批策略与终端审批交互
+├── policy/      路径校验、命令拦截、审计日志
+├── browser/     浏览器会话、CDP 模式切换、敏感页面策略
+├── render/      inline / lanterna / plain 三种渲染形态
+└── runtime/     后台任务队列与本地 Runtime API
+```
 
-### 第四期
+## Quick Start
 
-- 🔍 代码库语义检索（自然语言搜代码）
-- 🕸️ 代码关系图谱（类继承、接口实现、方法调用）
-- 📡 本地 Ollama Embedding + 远程 API 可配置
-- 🗃️ SQLite 向量存储与持久化
+环境要求：
 
-### 第五期
+- Java 17+
+- Maven 3.8+
+- 至少配置一个模型 API Key：`GLM_API_KEY` / `DEEPSEEK_API_KEY` / `STEP_API_KEY` / `KIMI_API_KEY`
 
-- 👥 多 Agent 协作（规划者 + 执行者 + 检查者）
-- 🎯 主从架构编排器自动分配任务
-- 🔍 检查者审查质量，未通过自动重试
-- 🛠️ 执行者共享工具集，支持文件操作与代码检索
-
-### 第六期
-
-- 🔒 危险操作静态规则识别（`write_file` / `execute_command` / `create_project` / `revert_turn`）
-- ⚠️ 三级危险等级展示（高危 / 中危 / 安全）
-- ✅ 审批决策：批准、全部放行、拒绝、跳过、修改参数后执行
-- 🔓 HITL 默认关闭，`/hitl on` 启用、`/hitl off` 关闭
-
-### 第七期
-
-- ⚡ 同一轮多个工具调用会并行执行，适合同时读取多个文件、同时列目录、同时跑独立检查
-- 🧵 ReAct、Plan-and-Execute、Multi-Agent Worker 共用同一套并行工具执行机制
-- ⏱️ 工具批次有统一超时，超时工具会被取消并把超时结果回灌给模型
-- 📋 Plan-and-Execute 与 Multi-Agent 会按 DAG 依赖批次并行推进独立任务
-
-### 第八期
-
-- 🔄 GLM-5.1、GLM-5V-Turbo、DeepSeek V4、阶跃星辰 StepFun 与 Kimi K2.6 多模型，`/model glm-5.1` / `/model glm-5v-turbo` 明确切 GLM 模型，`/model deepseek` / `/model step` / `/model kimi` 读取配置模型
-- 🧱 `LlmClient` 接口 + 模板方法基类，新增 provider 只需 ~20 行
-- 💾 默认模型持久化到 `~/.nano/config.json`
-
-### 第九期
-
-- 🌐 `web_search` 工具支持三条路：智谱 Web Search（与 GLM 共用 Key 默认推荐）、SerpAPI（国际通用付费）、SearXNG（开源自托管免费）
-- 📰 `web_fetch` 工具：抓 URL → readability 提取 → 返回 Markdown 正文
-- 🛡️ 内置网络访问策略：屏蔽内网、loopback、`file://`；5MB 响应上限；每分钟 30 次限流
-- 🚧 边界明确：SPA / 防爬墙返回空正文 + 已知边界提示，不重试
-
-### 第六期 HITL 增强
-
-- 🛡️ 路径围栏：文件类工具强制限定在项目根之内，绝对路径外逃 / `..` 穿越 / 符号链接逃逸全部拦截
-- 🧯 命令快速拒绝：HITL 之前的 fast-fail 黑名单（`sudo` / `rm -rf 全盘` / `mkfs` / `dd of=/dev` / fork bomb / `curl|sh` / `find /` / `chmod 777 /` / `shutdown`），减少 HITL 弹窗骚扰
-- 📦 资源上限：`write_file` 5MB；`execute_command` 60 秒超时 + 8KB 输出截断
-- 📋 结构化审计：危险工具调用按天写一行 JSONL 到 `~/.nano/audit/`，可通过 `/audit [N]` 查看
-- 🧱 定位：HITL 之外的辅助层，不是沙箱、不提供进程隔离
-
-## 快速开始
-
-### 1. 配置 API Key
-
-复制 `.env.example` 为 `.env`，并填入你的 GLM、DeepSeek、StepFun 或 Kimi API Key：
+启动：
 
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，填入你的 API Key
-```
 
-或者在环境变量中设置：
-
-```bash
-export GLM_API_KEY=your_api_key_here
-# 或
-export STEP_API_KEY=your_step_api_key_here
-export STEP_MODEL=step-3.5-flash
-# 或
-export KIMI_API_KEY=your_kimi_api_key_here
-export KIMI_MODEL=kimi-k2.6
-```
-
-长期记忆默认保存在用户目录下的 `~/.nano/memory/long_term_memory.json`。
-长期记忆只保存显式保存意图下的稳定事实：`/save <事实>`，或用户在自然语言里明确说“记一下 / 记住 / 以后记得”时由 Agent 调用 `save_memory`。它不应包含一次性任务请求或临时文件名/目录名。
-代码索引默认保存在 `~/.nano/rag/codebase.db`。
-调试日志默认滚动写入 `~/.nano/logs/nano.log`，旧日志会按保留天数和总容量自动清理。
-ReAct / Plan task / SubAgent / Planner 的模型 `reasoning_content` 会以 `LLM reasoning [...]` 形式写入该日志，便于排查模型为什么选择某个工具或路径。
-
-如果你想为某次运行指定单独目录，可以额外传入：
-
-```bash
-# 指定记忆目录
-java -Dnano.memory.dir=/tmp/nano-memory -jar target/nano-1.0-SNAPSHOT.jar
-
-# 指定 RAG 索引目录
-java -Dnano.rag.dir=/tmp/nano-rag -jar target/nano-1.0-SNAPSHOT.jar
-
-# 指定日志目录与保留策略
-java -Dnano.log.dir=/tmp/nano-logs \
-     -Dnano.log.level=DEBUG \
-     -Dnano.log.maxHistory=3 \
-     -Dnano.log.maxFileSize=5MB \
-     -Dnano.log.totalSizeCap=20MB \
-     -jar target/nano-1.0-SNAPSHOT.jar
-```
-
-也可以放到 `.env` 或环境变量中：
-
-```bash
-NANO_LOG_LEVEL=DEBUG
-NANO_LOG_DIR=/Users/yourname/.nano/logs
-NANO_LOG_MAX_HISTORY=7
-NANO_LOG_MAX_FILE_SIZE=10MB
-NANO_LOG_TOTAL_SIZE_CAP=100MB
-```
-
-### 2. 可选：配置 MCP server
-
-MCP 子系统默认开启。`~/.nano/mcp.json` 不存在时，Nano 会自动创建默认 chrome-devtools 配置：
-
-```json
-{
-  "mcpServers": {
-    "chrome-devtools": {
-      "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--isolated=true"]
-    }
-  }
-}
-```
-
-需要继续接入其他 server 时，可编辑 `~/.nano/mcp.json` 或项目内 `.nano/mcp.json`：
-
-```json
-{
-  "mcpServers": {
-    "fetch": {
-      "command": "uvx",
-      "args": ["mcp-server-fetch"]
-    },
-    "git": {
-      "command": "uvx",
-      "args": ["mcp-server-git", "--repository", "${PROJECT_DIR}"]
-    },
-    "remote-demo": {
-      "url": "https://mcp.example.com/v1",
-      "headers": {"Authorization": "Bearer ${REMOTE_TOKEN}"}
-    }
-  }
-}
-```
-
-`command` 表示 stdio server，`url` 表示 Streamable HTTP server。`${PROJECT_DIR}` / `${HOME}` 是内置变量，其他 `${VAR}` 从环境变量读取；缺失会在启动时直接提示。
-
-需要复用当前登录态时，Chrome 144+ 推荐打开 `chrome://inspect/#remote-debugging` 并勾选 `Allow remote debugging for this browser instance`。旧版本或需要显式 CDP 端口时，可以启动带远程调试端口和独立 user-data-dir 的 Chrome，并在这个调试 Chrome 中完成登录：
-
-```bash
-# macOS
-open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir=/tmp/nano-chrome-profile
-
-# Windows
-start chrome.exe --remote-debugging-port=9222 --user-data-dir=%TEMP%\nano-chrome-profile
-
-# Linux
-google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/nano-chrome-profile
-```
-
-通常不需要用户预先切换；Agent 如果遇到登录页会自己调用 `browser_connect`。手工调试时也可以在 Nano 内执行：
-
-```text
-/browser status
-/browser connect
-/browser tabs
-/browser disconnect
-```
-
-`/browser connect` 只在当前进程内把 `chrome-devtools` 切到 shared 模式，不会改写 `~/.nano/mcp.json`。如果希望启动后默认 shared，可手动把 args 改为：
-
-```json
-["-y", "chrome-devtools-mcp@latest", "--autoConnect"]
-```
-
-旧式 CDP HTTP JSON 端口也可使用：
-
-```json
-["-y", "chrome-devtools-mcp@latest", "--browser-url=http://127.0.0.1:9222"]
-```
-
-浏览器测试可直接让 Agent 读取动态页面，例如：
-
-```text
-帮我看下 https://mp.weixin.qq.com/s/RB7kF_BbsJZ5_Hmu9PxWdg 这篇文章讲了什么
-```
-
-期望路径是 `web_fetch` 尝试失败后，fallback 到 `mcp__chrome-devtools__navigate_page` 与 `take_snapshot`。
-
-如果 server 支持 resources，可以直接查看或引用：
-
-```text
-/mcp resources filesystem
-/mcp prompts filesystem
-帮我看下 @filesystem:file://README.md 这份文档
-```
-
-OAuth 和 `sampling/createMessage` 当前未实现；远程 server 需要鉴权时仍使用 `headers` + 环境变量注入 Bearer token。
-
-### 3. 编译运行
-
-```bash
-# 编译（默认跳过测试）
+# 编辑 .env，至少填写一个 API Key
 mvn clean package
-
-# 运行（需要本地 Ollama 已启动且拉取了 nomic-embed-text）
 java -jar target/nano-1.0-SNAPSHOT.jar
 ```
 
-或者直接运行：
+开发期也可以直接运行主类：
 
 ```bash
 mvn clean compile exec:java -Dexec.mainClass="com.nano.cli.Main"
 ```
 
-### 4. 如何进入 Plan 模式
+## Configuration
 
-当前默认模式是 `ReAct`。进入 `Plan-and-Execute` 的方式只有 `/plan`：
+Nano 会优先读取 `.env` 与环境变量。常用配置如下：
 
-1. 输入 `/plan`
-2. 下一条任务会用计划模式执行
-3. 执行完成后自动回到默认 `ReAct`
+```bash
+# LLM
+GLM_API_KEY=your_api_key_here
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+STEP_API_KEY=your_step_key_here
+KIMI_API_KEY=your_kimi_key_here
 
-如果想一条命令切模式并执行任务，可以直接输入：
+# Embedding / RAG
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_MODEL=nomic-embed-text:latest
+EMBEDDING_BASE_URL=http://localhost:11434
+
+# Renderer
+NANO_RENDERER=inline
+NANO_NO_STATUSBAR=false
+
+# MCP startup
+NANO_MCP_INITIALIZE_TIMEOUT_SECONDS=60
+NANO_MCP_STARTUP_WAIT_SECONDS=8
+```
+
+更多配置见 `.env.example`。
+
+## Usage
+
+常用交互命令：
 
 ```text
-/plan 创建一个 demo 项目，然后读取 pom.xml，最后验证项目结构
+/model                  查看或切换模型
+/context                查看上下文窗口、RAG topK、token 状态
+/memory                 查看记忆状态
+/save <fact>            保存长期记忆
+/index                  构建当前项目代码索引
+/search <query>         检索代码库
+/plan <task>            使用 Plan-and-Execute 执行复杂任务
+/team <task>            使用 Multi-Agent 协作执行任务
+/mcp                    查看 MCP server 和工具状态
+/browser status         查看浏览器连接状态
+/hitl on|off            开关人工审批
+/audit [N]              查看最近 N 条危险操作审计
+/snapshot               查看执行快照
+/restore <N>            回滚到最近第 N 个 pre-turn 快照
+/exit                   退出
 ```
 
-这条命令执行完成后，会自动回到默认的 `ReAct` 模式。
-
-计划生成后，CLI 会先停下来等待确认：
-
-- 按 `Enter`：按当前计划执行
-- 按 `Ctrl+O`：展开完整计划
-- 按 `ESC`：折叠完整计划或取消本次计划
-- 按 `I`：输入补充要求并重新规划
-- 按方向键不会触发取消；只有单独按下 `ESC` 才会取消待执行 plan
-
-## 使用示例
-
-### 第一期：ReAct 示例
+自然语言示例：
 
 ```text
-* 创建一个Java项目叫myapp
+帮我阅读 src/main/java/com/nano/agent 下的执行流程，并总结 ReAct 的工具调用链路
 
-🧠 思考过程:
-用户要创建一个 Java 项目。我先调用 create_project 工具生成基础结构，再根据工具返回结果确认是否创建成功。
+/plan 给这个项目增加一个新的 CLI 命令 /doctor，用来检查 API Key、MCP 和 Java 版本
 
-🤖 最终结果:
-已成功创建 Java 项目 "myapp"，包含基本的 Maven 结构。
+/team 帮我分析 memory 模块的上下文压缩逻辑，找出可能破坏 tool_call/tool_result 配对的边界
+
+阅读 @src/main/java/com/nano/mcp/McpClient.java，解释 initialize 到 tools/call 的完整流程
 ```
 
-### 第二期：Plan-and-Execute 示例
+## Agent Modes
+
+Nano 当前有三条主执行路径：
+
+| 模式             | 入口     | 适合场景                               |
+| ---------------- | -------- | -------------------------------------- |
+| ReAct            | 默认输入 | 单轮问答、简单修改、边执行边观察       |
+| Plan-and-Execute | `/plan`  | 多步骤、有依赖、需要先审阅计划的任务   |
+| Multi-Agent      | `/team`  | 需要任务拆解、执行和结果审核的复杂任务 |
+
+三条路径复用 `ToolRegistry`、`MemoryManager`、`ConversationHistoryCompactor` 和 `SnapshotService`，避免每种模式各写一套工具调用和上下文管理逻辑。
+
+## Tools
+
+内置工具包括：
 
 ```text
-💡 提示:
-   - 输入你的问题或任务
-   - 输入 '/' 后按 Tab 补全命令
-   - 输入 '@server:protocol://path' 可显式引用 MCP resource
-   - 任务运行中按 ESC 取消当前任务
-   - 默认模式是 ReAct
-   - 未识别的 `/xxx` 命令会直接提示“未知命令”，不会再交给 Agent 当普通对话处理
-
-* /plan 创建一个名为 demoapp 的 java 项目，然后读取 pom.xml，最后验证项目结构
-
-📋 使用 Plan-and-Execute 模式
-
-📋 正在规划任务: 创建一个名为 demoapp 的 java 项目，然后读取 pom.xml，最后验证项目结构
-
-╔══════════════════════════════════════════════════════════╗
-║  执行计划: 创建一个名为 demoapp 的 java 项目，然后读取... ║
-╠══════════════════════════════════════════════════════════╣
-║  1. ⏳ task_1               [COMMAND   ] 依赖: 无        ║
-║     创建 demoapp 项目结构                              ║
-║  2. ⏳ task_2               [FILE_READ ] 依赖: task_1    ║
-║     读取 demoapp/pom.xml 内容                          ║
-║  3. ⏳ task_3               [VERIFICATION] 依赖: task_2  ║
-║     验证项目结构与 Maven 配置                          ║
-╚══════════════════════════════════════════════════════════╝
-
-📝 计划已生成。
-   - 回车：按当前计划执行
-   - ESC：取消本次计划
-   - I：输入补充要求后重新规划
-
-I
-补充> 请在执行前先检查 README
-
-📝 已收到补充要求，正在重新规划...
-
-🚀 开始执行计划...
+read_file
+write_file
+list_dir
+execute_command
+create_project
+search_code
+web_search
+web_fetch
+revert_turn
 ```
 
-## 可用工具
+工具调用流程：
 
-- `read_file` - 读取文件内容
-- `write_file` - 写入文件内容
-- `list_dir` - 列出目录内容
-- `execute_command` - 在当前项目目录执行短时 Shell 命令（默认 60 秒超时，黑名单拦截破坏性命令）
-- `create_project` - 创建项目结构（java/python/node）
-- `search_code` - 语义检索代码库（自然语言查询）
-- `web_search` - 搜索互联网获取实时信息
-- `web_fetch` - 抓取已知 URL 并提取正文 Markdown
-- `revert_turn` - 恢复到最近第 N 个 pre-turn 快照（走 HITL 与审计）
-- `mcp__{server}__{tool}` - MCP server 动态提供的外部工具
-- `mcp__{server}__list_resources` / `mcp__{server}__read_resource` - 支持 resources 的 MCP server 自动注册的虚拟工具
+1. LLM 通过 Function Calling 选择工具并生成参数。
+2. ToolRegistry 校验工具名、参数和执行策略。
+3. 高风险工具进入 HITL 审批链路。
+4. 工具执行结果按 `tool_call_id` 回灌到 conversationHistory。
+5. Agent 基于工具结果继续推理，直到生成最终回答。
 
-同一轮模型返回多个工具调用时，Nano 会并行执行这些工具；如果工具之间有依赖关系，模型应分多轮调用。
+同一轮返回多个 `tool_calls` 时，Nano 会并行执行无依赖工具，并按原始顺序写回结果，保持 OpenAI-compatible tool call 协议稳定。
 
-文件类工具（`read_file` / `write_file` / `list_dir` / `create_project`）路径强制限定在项目根之内，越界请求会被策略层拒绝；`execute_command` 通过命令黑名单拦截 `sudo` / `rm -rf 全盘` / `mkfs` / `dd of=/dev` / fork bomb / `curl|sh` 等。`revert_turn` 会批量回写工作区，默认触发 HITL 和审计。所有 `mcp__` 前缀工具默认触发 HITL 和审计。详见 `/policy`。
+## MCP
 
-## 命令
+Nano 支持把外部 MCP Server 暴露的工具动态接入 Agent：
 
-- `/plan` - 下一条任务使用 Plan-and-Execute 模式
-- `/plan <任务>` - 直接用 Plan-and-Execute 模式执行这条任务
-- `/team` - 下一条任务使用 Multi-Agent 协作模式
-- `/team <任务>` - 直接用 Multi-Agent 协作模式执行这条任务
-- `/cancel` - 运行中请求取消当前任务；空闲时会提示当前没有正在运行的任务
-- `/hitl on` - 启用危险操作人工审批（HITL）
-- `/hitl off` - 关闭 HITL 审批
-- `/hitl` - 查看 HITL 当前状态
-- `/mcp` - 查看所有 MCP server 状态
-- `/mcp restart <name>` - 重启单个 MCP server
-- `/mcp logs <name>` - 查看 MCP server 最近 200 行 stderr 日志
-- `/mcp disable <name>` - 运行时禁用 MCP server 并移除其工具
-- `/mcp enable <name>` - 运行时启用 MCP server
-- `/mcp resources <name>` - 查看 MCP server 暴露的 resources
-- `/mcp prompts <name>` - 查看 MCP server 暴露的 prompts（只查看，不注入对话）
-- `/policy` - 查看安全策略状态（路径围栏 / 命令黑名单 / 资源上限 / 审计目录）
-- `/audit [N]` - 查看今日最近 N 条危险工具审计记录（默认 10）
-- `/snapshot` - 查看最近 Side-Git 快照
-- `/snapshot status` - 查看 Side-Git 快照状态
-- `/snapshot clean` - 清理当前项目 Side-Git 快照目录
-- `/restore <N>` - 恢复到最近第 N 个 pre-turn 快照
-- `/memory` / `/mem` - 查看记忆系统状态
-- `/memory clear` - 清空长期记忆
-- `/save <事实>` - 手动保存关键事实到长期记忆
-- `save_memory` - Agent 内置工具，仅在用户明确要求保存长期偏好或稳定事实时调用；“复用已登录 Chrome，记一下”这类浏览器登录态偏好会写入长期记忆，供新会话检索
-- `/index [路径]` - 索引代码库（默认当前目录）
-- `/search <查询>` - 语义检索代码
-- `/graph <类名>` - 查看代码关系图谱
-- `/clear` - 清空对话历史
-- `/exit` / `/quit` - 退出程序
+- stdio：通过子进程标准输入输出通信，适合本地工具 server。
+- Streamable HTTP：通过 OkHttp + SSE 连接远程 MCP server。
+- tools/list：启动后发现外部工具并转换为 Nano 工具描述。
+- tools/call：模型选择 MCP 工具后，由 McpToolBridge 转发调用。
+- resources：支持列举和读取 MCP resource，并可用 `@server:uri` 在输入中引用。
 
-## 运行效果
-
-### 第一期：旧版启动效果
+工具命名规则：
 
 ```text
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║   ██████╗  █████╗ ██╗      ██████╗██╗     ██╗            ║
-║   ██╔══██╗██╔══██╗██║     ██╔════╝██║     ██║            ║
-║   ██████╔╝███████║██║     ██║     ██║     ██║            ║
-║   ██╔═══╝ ██╔══██║██║     ██║     ██║     ██║            ║
-║   ██║     ██║  ██║███████╗╚██████╗███████╗██║            ║
-║   ╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝╚══════╝╚═╝            ║
-║                                                          ║
-║              简单的 Java Agent CLI v1.0.0                ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
+mcp__chrome-devtools__take_snapshot
+mcp__filesystem__read_file
+mcp__server__tool
 ```
 
-### 第三期：当前运行效果
+默认情况下，MCP 工具也会纳入 HITL 和 AuditLog，避免第三方工具绕过本地安全策略。
+
+## Memory & Context
+
+Nano 将记忆和上下文分成三层：
+
+- 短期记忆：当前会话里的用户消息、模型回复、工具调用和工具结果。
+- 长期记忆：通过 `/save` 或明确保存动作写入，跨会话复用。
+- conversationHistory：真实发送给 LLM 的消息队列，严格维护 `assistant.tool_calls -> tool` 的配对关系。
+
+上下文接近模型窗口阈值时，Compactor 会对旧消息做摘要压缩，保留最近多轮完整交互，并按 user message 边界重建历史，避免切断 tool call 协议。
+
+## Safety
+
+Nano 不是容器沙箱，也不承诺隔离任意恶意代码。它的本地安全模型由几层机制组成：
+
+- HITL：高风险工具调用前要求用户确认。
+- PathGuard：文件类操作默认限制在项目根目录内。
+- CommandGuard：提前拒绝明显危险命令，如全盘删除、系统关机、设备写入等。
+- AuditLog：危险工具调用按天写入 JSONL，记录参数摘要、审批结果和执行结果。
+- SnapshotService：每轮任务前后创建 side-git 快照，可通过 `/restore` 回滚。
+
+## Runtime API
+
+Nano 可以作为本地 Runtime API 运行，便于接入 IDE 插件、自动化脚本或 Web 面板：
+
+```bash
+NANO_RUNTIME_API_KEY=your_local_api_key \
+java -jar target/nano-1.0-SNAPSHOT.jar serve --http --port 8080
+```
+
+主要端点：
 
 ```text
-   ████████    Nano π  v16.1.0
-     ██  ██    Model glm-5.1 (glm)
-     ██  ██    MCP 4/4 · 61 tools · 2/2 skills · ReAct
-     ██  ██    ReAct · Plan · MCP · Browser · Image
-     ██  ██
-
-Tips for getting started:
-1. Type / for commands and Tab completion
-2. Ask coding questions, edit code or run commands
-3. Attach context with @path or @image:
-
-* 你好，请列出当前目录的文件
-
-🧠 思考过程:
-用户想了解当前目录结构。我先读取目录，再基于结果做归类说明，而不是只回原始文件列表。
-
-🤖 最终结果:
-当前目录包含 `src`、`target`、`pom.xml`、`README.md` 等文件，
-这是一个标准的 Java Maven 项目。
-
-* /exit
-
-👋 再见!
+POST /v1/threads
+POST /v1/threads/{id}/turns
+GET  /v1/threads/{id}/events
 ```
 
-## 技术栈
+Runtime API 只监听本地，并要求 `Authorization: Bearer <key>` 或 `X-Nano-API-Key`。
 
-- Java 17
-- Maven
-- GLM-5.1 API
-- OkHttp
-- Jackson
-- JLine 4（终端交互、Status、输入 widgets）
-- SQLite（向量与图谱持久化）
-- JavaParser（AST 分析）
-- Ollama（本地 Embedding）
+## Tests
 
-## 项目结构
+日常打包默认跳过测试，优先产出可手工验收的 jar：
 
+```bash
+mvn clean package
 ```
-src/main/java/com/nano
-├── agent/
-│   ├── Agent.java              # ReAct Agent
-│   ├── PlanExecuteAgent.java   # Plan-and-Execute Agent
-│   ├── AgentRole.java          # Agent 角色枚举
-│   ├── AgentMessage.java       # Agent 间通信消息
-│   ├── SubAgent.java           # 可配置子代理
-│   └── AgentOrchestrator.java  # Multi-Agent 编排器
-├── cli/
-│   ├── Main.java               # CLI 入口
-│   ├── CliCommandParser.java   # 命令解析
-│   └── PlanReviewInputParser.java  # 计划审核输入
-├── llm/
-│   ├── GLMClient.java          # GLM API 客户端；glm-5.1 走 Coding endpoint，glm-5v-turbo 走多模态 endpoint
-│   ├── DeepSeekClient.java     # DeepSeek API 客户端
-│   ├── StepClient.java         # 阶跃星辰 StepFun API 客户端
-│   └── KimiClient.java         # Kimi / Moonshot API 客户端
-├── context/
-│   ├── ContextMode.java        # short / balanced / long 模式
-│   ├── ContextProfile.java     # 模型窗口与上下文策略
-│   └── TokenUsageFormatter.java # Token / cache / 成本展示
-├── memory/
-│   ├── MemoryEntry.java        # 记忆条目
-│   ├── ConversationMemory.java # 短期记忆
-│   ├── LongTermMemory.java     # 长期记忆
-│   ├── ContextCompressor.java  # 上下文压缩
-│   ├── TokenBudget.java        # Token 预算管理
-│   ├── MemoryRetriever.java    # 记忆检索
-│   └── MemoryManager.java      # 记忆门面类
-├── plan/
-│   ├── Task.java               # 任务定义
-│   ├── ExecutionPlan.java      # 执行计划
-│   └── Planner.java            # 规划器
-├── rag/
-│   ├── EmbeddingClient.java    # Embedding API 客户端
-│   ├── VectorStore.java        # SQLite 向量存储
-│   ├── CodeChunk.java          # 代码块模型
-│   ├── CodeChunker.java        # 代码分块器
-│   ├── CodeAnalyzer.java       # AST 关系分析
-│   ├── CodeRelation.java       # 代码关系模型
-│   ├── CodeIndex.java          # 索引管理器
-│   └── CodeRetriever.java      # 检索入口
-└── tool/
-    └── ToolRegistry.java       # 工具注册表
+
+按范围回归：
+
+```bash
+mvn test -Pquick
+mvn test -Pphase16-smoke
+mvn test -Dtest=ExecutionPlanTest -DskipTests=false
+mvn test -DskipTests=false
 ```
+
+## Project Status
+
+已完成的核心能力：
+
+- ReAct Agent 循环
+- Plan-and-Execute + DAG 任务依赖
+- Multi-Agent Planner / Worker / Reviewer
+- Memory 与长上下文压缩
+- ToolRegistry 与并行 tool calls
+- MCP stdio / Streamable HTTP 接入
+- Chrome DevTools MCP 浏览器能力
+- RAG 代码检索
+- HITL 审批、安全策略和审计日志
+- Side-Git 快照与回滚
+- Runtime API 与后台任务队列
+- 图片输入与多模态消息格式
+
+当前边界：
+
+- 不提供容器 / VM 级沙箱。
+- MCP OAuth、sampling 和 server 自动恢复仍属于后续增强。
+- 图片输入依赖具体模型是否支持多模态。
+- 代码检索效果依赖 embedding provider 和本地索引质量。
+
+## License
+
+本项目当前未声明开源许可证。公开发布前建议补充 `LICENSE`，否则默认保留全部权利。

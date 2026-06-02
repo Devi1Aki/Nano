@@ -85,7 +85,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Nano v16.1.0 - Terminal-First Agent IDE
+ * Nano v1.1.0 - Terminal-First Agent IDE
  * 支持 ReAct、Plan-and-Execute、Memory、RAG、Multi-Agent、HITL、并行工具调用、多模型切换、MCP、CDP 会话复用
  * 第 15 期新增：Skill 系统（三层加载 + load_skill 工具 + SkillContextBuffer 注入）、内置 web-access skill
  * 第 16 期新增：TUI 界面（Lanterna 3）、文件树浏览、代码高亮、对话历史可视化、配置管理面板
@@ -96,7 +96,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * HITL 增强：路径围栏（PathGuard）、命令快速拒绝（CommandGuard）、操作审计链（AuditLog）—— 见 com.nano.policy
  */
 public class Main {
-    private static final String VERSION = "16.1.0";
+    private static final String VERSION = "1.1.0";
     private static final String ENV_FILE = ".env";
     private static final String NANO_HOME_PROPERTY = "nano.home";
     private static final String LOG_DIR_PROPERTY = "nano.log.dir";
@@ -177,6 +177,7 @@ public class Main {
             long mcpReady,
             int mcpTotal,
             int mcpTools,
+            int totalTools,
             int skillsEnabled,
             int skillsTotal,
             String note
@@ -299,7 +300,12 @@ public class Main {
             taskManager.start();
             Runtime.getRuntime().addShutdownHook(new Thread(taskManager::close, "nano-task-shutdown"));
             renderer.updateStatus(statusInfo(llmClient, hitlHandler, "idle", mcpServerManager, skillRegistry));
-            StartupScreenInfo startupScreenInfo = startupScreenInfo(llmClient, mcpServerManager, skillRegistry, startupNote);
+            StartupScreenInfo startupScreenInfo = startupScreenInfo(
+                    llmClient,
+                    mcpServerManager,
+                    skillRegistry,
+                    reactAgent.getToolRegistry(),
+                    startupNote);
             if (renderer instanceof InlineRenderer inline) {
                 inline.installStartupScreen(startupScreenLines(startupScreenInfo));
             } else {
@@ -1738,14 +1744,16 @@ public class Main {
     private static StartupScreenInfo startupScreenInfo(LlmClient llmClient,
                                                        McpServerManager mcpServerManager,
                                                        SkillRegistry skillRegistry,
+                                                       ToolRegistry toolRegistry,
                                                        String note) {
         long ready = mcpServerManager.servers().stream()
                 .filter(server -> server.status() == McpServerStatus.READY)
                 .count();
         int total = mcpServerManager.servers().size();
-        int tools = mcpServerManager.servers().stream()
+        int mcpTools = mcpServerManager.servers().stream()
                 .mapToInt(server -> server.tools().size())
                 .sum();
+        int totalTools = toolRegistry.getToolDefinitions().size();
         int skillTotal = skillRegistry.allSkills().size();
         int skillEnabled = skillRegistry.enabledSkills().size();
         return new StartupScreenInfo(
@@ -1753,7 +1761,8 @@ public class Main {
                 llmClient.getProviderName(),
                 ready,
                 total,
-                tools,
+                mcpTools,
+                totalTools,
                 skillEnabled,
                 skillTotal,
                 note == null ? "" : note.trim()
@@ -2131,6 +2140,7 @@ public class Main {
                 0,
                 0,
                 0,
+                0,
                 ""));
     }
 
@@ -2139,19 +2149,30 @@ public class Main {
         String provider = info.provider() == null || info.provider().isBlank() ? "model" : info.provider();
         String mcp = info.mcpTotal() <= 0
                 ? "MCP not configured"
-                : "MCP " + info.mcpReady() + "/" + info.mcpTotal() + " · " + info.mcpTools() + " tools";
+                : "MCP " + info.mcpReady() + "/" + info.mcpTotal();
+        String tools = "Tools " + info.totalTools() + " total";
         String skills = info.skillsTotal() <= 0
                 ? "0 skills"
                 : info.skillsEnabled() + "/" + info.skillsTotal() + " skills";
         String ready = "Model " + model + " (" + provider + ")";
-        String capabilities = "ReAct · Plan · MCP · Browser · Image · Tools · Memory · RAG";
-        String state = mcp + " · " + skills + " · ReAct";
+        String capabilities = "ReAct · Plan · MCP · Memory · RAG";
+        String state = tools + " · " + mcp + " · " + skills;
         List<String> lines = new ArrayList<>(List.of(
-                "   " + AnsiStyle.section("/\\_/\\") + "      " + AnsiStyle.emphasis("Nano") + "  " + AnsiStyle.subtle("v" + VERSION),
-                "   " + AnsiStyle.section("( o.o )") + "    " + AnsiStyle.subtle(ready),
-                "   " + AnsiStyle.section(" > ^ <") + "     " + AnsiStyle.subtle(state),
-                "               " + AnsiStyle.subtle(capabilities),
-                "               " + AnsiStyle.subtle("Agent Harness for local development tasks"),
+                startupBorder("╭────────────────────────────────────────────────────────────╮"),
+                startupLogoLine("███╗   ██╗ █████╗ ███╗   ██╗ ██████╗"),
+                startupLogoLine("████╗  ██║██╔══██╗████╗  ██║██╔═══██╗"),
+                startupLogoLine("██╔██╗ ██║███████║██╔██╗ ██║██║   ██║"),
+                startupLogoLine("██║╚██╗██║██╔══██║██║╚██╗██║██║   ██║"),
+                startupLogoLine("██║ ╚████║██║  ██║██║ ╚████║╚██████╔╝"),
+                startupLogoLine("╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝"),
+                startupBorder("├────────────────────────────────────────────────────────────┤"),
+                startupPanelLine(""),
+                startupCatLine("/\\_/\\", "v" + VERSION + " · Terminal Agent Harness", false),
+                startupCatLine("( o.o )", ready, false),
+                startupCatLine("==/ . \\==", state, true),
+                startupCatLine("", capabilities, false),
+                startupPanelLine(""),
+                startupBorder("╰────────────────────────────────────────────────────────────╯"),
                 "",
                 "Tips for getting started:",
                 "1. Type " + AnsiStyle.emphasis("/") + " for commands and Tab completion",
@@ -2163,6 +2184,50 @@ public class Main {
             lines.add(AnsiStyle.subtle(info.note().replace('\n', ' ')));
         }
         return lines;
+    }
+
+    private static String startupLogoLine(String logo) {
+        String clipped = clipAscii(logo, 58);
+        return AnsiStyle.wine("│ ") + AnsiStyle.rose(clipped)
+                + AnsiStyle.wine(" ".repeat(Math.max(0, 58 - clipped.length())) + " │");
+    }
+
+    private static String startupCatLine(String cat, String text, boolean highlightText) {
+        String prefix = "     ";
+        String left = centerAscii(cat == null ? "" : cat, 9);
+        String gap = "     ";
+        int textWidth = 60 - prefix.length() - 9 - gap.length();
+        String clipped = clipAscii(text == null ? "" : text, textWidth);
+        int padding = Math.max(0, textWidth - clipped.length());
+        return AnsiStyle.wine("│" + prefix)
+                + AnsiStyle.rose(left)
+                + AnsiStyle.wine(gap)
+                + (highlightText ? AnsiStyle.green(clipped) : AnsiStyle.subtle(clipped))
+                + AnsiStyle.wine(" ".repeat(padding) + "│");
+    }
+
+    private static String startupPanelLine(String text) {
+        String clipped = clipAscii(text == null ? "" : text, 60);
+        return AnsiStyle.wine("│" + clipped + " ".repeat(Math.max(0, 60 - clipped.length())) + "│");
+    }
+
+    private static String startupBorder(String text) {
+        return AnsiStyle.wine(text);
+    }
+
+    private static String centerAscii(String text, int width) {
+        String clipped = clipAscii(text == null ? "" : text, width);
+        int total = Math.max(0, width - clipped.length());
+        int left = total / 2;
+        int right = total - left;
+        return " ".repeat(left) + clipped + " ".repeat(right);
+    }
+
+    private static String clipAscii(String text, int max) {
+        if (text == null || text.length() <= max) {
+            return text == null ? "" : text;
+        }
+        return max <= 1 ? text.substring(0, max) : text.substring(0, max - 1) + "…";
     }
 
     static McpConfigBootstrapResult ensureDefaultMcpConfig(Path devAgentHome) throws IOException {

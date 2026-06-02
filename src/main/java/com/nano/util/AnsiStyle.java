@@ -14,6 +14,9 @@ public final class AnsiStyle {
     private static final String RED = "\u001B[31m";
     private static final String GRAY = "\u001B[90m";
     private static final String PURPLE = "\u001B[38;5;141m";
+    private static final String ORANGE = "\u001B[38;5;208m";
+    private static final String WINE = "\u001B[38;5;88m";
+    private static final String ROSE = "\u001B[38;5;167m";
     private static final String BG_PANEL = "\u001B[48;5;236m";
     private static final boolean ENABLED = determineEnabled();
 
@@ -22,6 +25,34 @@ public final class AnsiStyle {
 
     public static String heading(String text) {
         return wrap(BOLD + CYAN, text);
+    }
+
+    public static String cyan(String text) {
+        return wrap(BOLD + CYAN, text);
+    }
+
+    public static String green(String text) {
+        return wrap(BOLD + GREEN, text);
+    }
+
+    public static String yellow(String text) {
+        return wrap(BOLD + YELLOW, text);
+    }
+
+    public static String purple(String text) {
+        return wrap(BOLD + PURPLE, text);
+    }
+
+    public static String orange(String text) {
+        return wrap(BOLD + ORANGE, text);
+    }
+
+    public static String wine(String text) {
+        return wrap(BOLD + WINE, text);
+    }
+
+    public static String rose(String text) {
+        return wrap(BOLD + ROSE, text);
     }
 
     public static String section(String text) {

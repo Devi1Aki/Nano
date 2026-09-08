@@ -14,7 +14,7 @@
 - 定位：面向商业使用的 Java Agent CLI 产品，对标 Claude Code
 - 已交付 21 期（ReAct → Plan+DAG → Memory → RAG → Multi-Agent → HITL → 并行工具 → 多模型 → 联网 → MCP 核心 → MCP 高级 → 长上下文 → Chrome DevTools → CDP 会话复用 → Skill → TUI → LSP 诊断 → Side-Git 快照 → Prompt 分层 → Runtime API → 图片输入）
 - 下一步：OAuth / sampling / recovery 作为后续 MCP 增强
-- Banner 版本：`v1.1.0`，Maven 产物：`nano-1.1.0.jar`
+- Banner 版本：`v1.1.1`，Maven 产物：`nano-1.1.1.jar`
 
 ## 运行前提
 
@@ -26,7 +26,7 @@
 ```bash
 cp .env.example .env
 mvn clean package        # 默认跳过测试，优先产出可手工验收 jar
-java -jar target/nano-1.1.0.jar
+java -jar target/nano-1.1.1.jar
 mvn test -Pquick          # 常规回归
 mvn test -Pphase16-smoke  # TUI 相关
 mvn test -Dtest=XxxTest -DskipTests=false   # 针对性
@@ -75,7 +75,7 @@ src/main/java/com/nano/
 
 启动与 inline 渲染当前约定：
 
-- 开屏 Banner 使用无右边框的简洁布局，避免 CJK/ANSI 字宽导致右侧竖线错位；Phase 22 后默认是 π 主题彩色 logo + Qoder 风格首屏，只展示模型、MCP、Skill、ReAct 状态和三条 getting-started tips，不再把 MCP server 明细刷成启动日志。
+- 开屏 Banner 使用大字符块 `NANO`、小猫头像和酒红色闭合边框；首屏只展示模型、工具总数、MCP、Skill、ReAct 状态和三条 getting-started tips，不再把 MCP server 明细刷成启动日志。
 - inline 模式使用 JLine 4 的 LineReader 编辑能力，默认提示符是 `* `，右提示显示 `message / @path / @image`。
 - 默认 CLI 启动路径应先 `Renderer.start()` 并初始化底部 dock；inline 首屏不要在 `readLine` 前裸写 stdout，而是通过 `InlineRenderer.installStartupScreen(...)` 挂到 `LineReader.CALLBACK_INIT`，首次进入输入时用 `printAbove` 一次性显示完整 Banner + tips，避免 logo 被 LineReader 首次重绘滚出可视区域。
 - `BottomStatusBar` 现在是 JLine `Status` 托管的底部 dock：由 JLine 维护滚动区域和状态行位置，不再手写 `\n` / `moveUp` / `CLEAR_TO_EOS` 清屏。输入期会把 LineReader 光标定位到 dock 上方一行，让 `*` 输入行和 Status 同处底部区域；dock 保留两类信息：上层模式 + MCP/Skill 摘要，下层 Auto Model / model / phase / ctx 百分比与 token / cost / elapsed / cwd。
@@ -98,6 +98,7 @@ src/main/java/com/nano/
 
 - 长期记忆只通过 `/save` 或用户明确要求保存；不要自动提取事实
 - 长期记忆只保存跨会话稳定事实，不保存临时指令
+- 长期记忆使用 `~/.nano/memory/long_term_memory.db`（SQLite）；首次启动会迁移旧 `long_term_memory.json`
 - 两道压缩不要混淆：shortTermMemory 压缩 vs conversationHistory 压缩（后者是防 window 超限的关键）
 
 ### HITL + 策略层

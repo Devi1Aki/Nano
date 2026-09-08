@@ -16,7 +16,7 @@ Nano 是一只住在终端里的本地开发 Agent。它不会只是陪你聊天
 │ ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝                     │
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
-│      /\_/\      v1.1.0 · Terminal Agent Harness            │
+│      /\_/\      v1.1.1 · Terminal Agent Harness            │
 │     ( o.o )     Model glm-5.1 (glm)                        │
 │    ==/ . \==    Tools 75 total · MCP 4/4 · 2/2 skills      │
 │                 ReAct · Plan · MCP · Memory · RAG          │
@@ -94,7 +94,7 @@ cp .env.example .env
 
 # 编辑 .env，至少填写一个 API Key
 mvn clean package
-java -jar target/nano-1.1.0.jar
+java -jar target/nano-1.1.1.jar
 ```
 
 开发期也可以直接运行主类：
@@ -223,7 +223,7 @@ mcp__server__tool
 Nano 将记忆和上下文分成三层：
 
 - 短期记忆：当前会话里的用户消息、模型回复、工具调用和工具结果。
-- 长期记忆：通过 `/save` 或明确保存动作写入，跨会话复用。
+- 长期记忆：通过 `/save` 或明确保存动作写入 SQLite，默认位于 `~/.nano/memory/long_term_memory.db`，跨会话复用。
 - `conversationHistory`：真实发送给 LLM 的消息队列，严格维护 `assistant.tool_calls -> tool` 的配对关系。
 
 上下文接近模型窗口阈值时，Compactor 会对旧消息做摘要压缩，保留最近多轮完整交互，并按 user message 边界重建历史，避免切断 tool call 协议。
@@ -244,7 +244,7 @@ Nano 可以作为本地 Runtime API 运行，便于接入 IDE 插件、自动化
 
 ```bash
 NANO_RUNTIME_API_KEY=your_local_api_key \
-java -jar target/nano-1.1.0.jar serve --http --port 8080
+java -jar target/nano-1.1.1.jar serve --http --port 8080
 ```
 
 主要端点：
@@ -275,6 +275,13 @@ mvn test -DskipTests=false
 ```
 
 ## Release Notes
+
+### v1.1.1
+
+- 将长期记忆持久化迁移到 SQLite，并兼容首次启动导入旧版 JSON 数据。
+- 建立 20 条本地开发 Agent benchmark 语料，覆盖检索、修改、计划、MCP 与安全治理场景。
+- 增加 benchmark 结构校验测试和 GitHub Actions 全量回归，CI 构建后上传可执行 jar。
+- 修复启动页版本断言，并清理网站中的旧项目名、JLine 版本和 jar 名称。
 
 ### v1.1.0
 

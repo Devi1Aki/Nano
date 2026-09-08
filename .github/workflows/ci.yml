@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quick-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run quick regression
+        run: mvn --batch-mode --no-transfer-progress test -Pquick
+
+  full-regression-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run full regression and build runnable jar
+        run: mvn --batch-mode --no-transfer-progress clean verify -DskipTests=false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nano-jar
+          path: target/nano-*.jar
+          if-no-files-found: error

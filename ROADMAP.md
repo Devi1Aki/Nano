@@ -4,6 +4,16 @@
 
 ---
 
+## v1.1.1：工程基线与评测语料 ✅
+
+- 长期记忆迁移到 SQLite，并兼容首次启动导入旧版 JSON 数据。
+- GitHub Actions 同时执行 quick 回归与全量 `verify`，并上传可执行 jar。
+- 建立 20 条固定 Agent benchmark 语料，覆盖检索、修改、计划、MCP、安全治理和三种执行模式。
+- 通过 `BenchmarkCorpusTest` 校验用例数量、唯一 ID、分类、模式和结果断言完整性。
+- 当前只交付评测语料与结构校验；自动执行、Trace 采集和指标汇总留给后续 Eval Runner。
+
+---
+
 ## 第1期：基础ReAct + Tool Call ✅
 
 **已完成**

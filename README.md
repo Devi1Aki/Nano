@@ -16,7 +16,7 @@ Nano 是一只住在终端里的本地开发 Agent。它不会只是陪你聊天
 │ ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝                     │
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
-│      /\_/\      v1.1.1 · Terminal Agent Harness            │
+│      /\_/\      v1.2.0 · Terminal Agent Harness            │
 │     ( o.o )     Model glm-5.1 (glm)                        │
 │    ==/ . \==    Tools 75 total · MCP 4/4 · 2/2 skills      │
 │                 ReAct · Plan · MCP · Memory · RAG          │
@@ -39,6 +39,7 @@ Tips for getting started:
 - 接入 MCP 外部工具生态，支持 stdio 和 Streamable HTTP 两种传输方式。
 - 通过 Memory 与上下文压缩治理长对话，避免破坏 `tool_call` / `tool_result` 配对协议。
 - 对写文件、执行命令、创建项目、回滚等高风险工具调用加入 HITL 审批、路径校验和审计记录。
+- 通过 SQLite Trace 记录每轮任务的模式、模型、耗时、Token 与工具事件，可在 CLI 内回看执行链路。
 
 ## Architecture
 
@@ -76,7 +77,9 @@ src/main/java/com/nano/
 ├── policy/      路径校验、命令拦截、审计日志
 ├── browser/     浏览器会话、CDP 模式切换、敏感页面策略
 ├── render/      inline / lanterna / plain 渲染形态
-└── runtime/     后台任务队列与本地 Runtime API
+├── runtime/     后台任务队列与本地 Runtime API
+├── trace/       Agent turn、LLM 与工具事件追踪
+└── eval/        固定 benchmark 语料与可插拔评测执行框架
 ```
 
 ## Quick Start
@@ -94,7 +97,7 @@ cp .env.example .env
 
 # 编辑 .env，至少填写一个 API Key
 mvn clean package
-java -jar target/nano-1.1.1.jar
+java -jar target/nano-1.2.0.jar
 ```
 
 开发期也可以直接运行主类：
@@ -126,6 +129,9 @@ NANO_NO_STATUSBAR=false
 # MCP
 NANO_MCP_INITIALIZE_TIMEOUT_SECONDS=60
 NANO_MCP_STARTUP_WAIT_SECONDS=8
+
+# Trace
+NANO_TRACE_DIR=/absolute/path/to/traces
 ```
 
 MCP 配置默认读取用户级 `~/.nano/mcp.json` 和项目级 `.nano/mcp.json`。项目里的 `.nano/` 通常不提交到 Git，用来保存本机私有的 MCP server 配置。
@@ -145,6 +151,8 @@ MCP 配置默认读取用户级 `~/.nano/mcp.json` 和项目级 `.nano/mcp.json`
 /browser status         查看浏览器连接状态
 /hitl on|off            开关人工审批
 /audit [N]              查看最近 N 条危险操作审计
+/trace                  查看最近 10 条 Agent 执行轨迹
+/trace <trace_id>       查看模型与工具事件时间线
 /snapshot               查看执行快照
 /restore <N>            回滚到最近第 N 个 pre-turn 快照
 /exit                   退出
@@ -244,7 +252,7 @@ Nano 可以作为本地 Runtime API 运行，便于接入 IDE 插件、自动化
 
 ```bash
 NANO_RUNTIME_API_KEY=your_local_api_key \
-java -jar target/nano-1.1.1.jar serve --http --port 8080
+java -jar target/nano-1.2.0.jar serve --http --port 8080
 ```
 
 主要端点：
@@ -275,6 +283,13 @@ mvn test -DskipTests=false
 ```
 
 ## Release Notes
+
+### v1.2.0
+
+- 新增 SQLite Trace，按 turn 关联 ReAct、Plan-and-Execute 与 Multi-Agent 执行轨迹。
+- 统一采集 LLM 调用耗时、Token，以及内置/MCP 工具的调用状态与耗时；Trace 故障采用 fail-open，不影响任务结果。
+- 新增 `/trace` 与 `/trace <trace_id>`，支持查看最近任务和单次事件时间线，敏感字段在持久化前脱敏。
+- 抽象 `BenchmarkCorpus` 与 `EvalRunner`，支持选择固定用例、注入执行器和判定器并输出 JSON 报告；当前版本不附带未经实际运行的通过率。
 
 ### v1.1.1
 

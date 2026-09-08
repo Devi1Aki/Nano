@@ -17,6 +17,7 @@ import com.nano.hitl.RendererHitlHandler;
 import com.nano.hitl.TerminalHitlHandler;
 import com.nano.llm.LlmClient;
 import com.nano.llm.LlmClientFactory;
+import com.nano.llm.TracingLlmClient;
 import com.nano.render.Renderer;
 import com.nano.render.RendererFactory;
 import com.nano.render.StatusInfo;
@@ -44,6 +45,9 @@ import com.nano.snapshot.SnapshotService;
 import com.nano.snapshot.TurnSnapshot;
 import com.nano.skill.SkillRegistry;
 import com.nano.tool.ToolRegistry;
+import com.nano.trace.TraceContext;
+import com.nano.trace.TraceFormatter;
+import com.nano.trace.TraceStore;
 import com.nano.util.AnsiStyle;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
@@ -85,7 +89,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Nano v1.1.1 - Terminal-First Agent IDE
+ * Nano v1.2.0 - Terminal-First Agent IDE
  * 支持 ReAct、Plan-and-Execute、Memory、RAG、Multi-Agent、HITL、并行工具调用、多模型切换、MCP、CDP 会话复用
  * 第 15 期新增：Skill 系统（三层加载 + load_skill 工具 + SkillContextBuffer 注入）、内置 web-access skill
  * 第 16 期新增：TUI 界面（Lanterna 3）、文件树浏览、代码高亮、对话历史可视化、配置管理面板
@@ -96,7 +100,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * HITL 增强：路径围栏（PathGuard）、命令快速拒绝（CommandGuard）、操作审计链（AuditLog）—— 见 com.nano.policy
  */
 public class Main {
-    private static final String VERSION = "1.1.1";
+    private static final String VERSION = "1.2.0";
     private static final String ENV_FILE = ".env";
     private static final String NANO_HOME_PROPERTY = "nano.home";
     private static final String LOG_DIR_PROPERTY = "nano.log.dir";
@@ -195,7 +199,7 @@ public class Main {
         configureLogging();
 
         NanoConfig config = NanoConfig.load();
-        LlmClient llmClient = LlmClientFactory.createFromConfig(config);
+        LlmClient llmClient = TracingLlmClient.wrap(LlmClientFactory.createFromConfig(config));
         if (llmClient == null) {
             System.err.println("❌ 错误: 未找到可用的 API Key");
             System.err.println("请在 .env 文件中添加 GLM_API_KEY、DEEPSEEK_API_KEY、STEP_API_KEY 或 KIMI_API_KEY");
@@ -259,6 +263,12 @@ public class Main {
             renderer.updateStatus(statusInfo(llmClient, hitlHandler, "idle", mcpServerManager, null));
 
             String startupNote = "";
+            TraceStore traceStore = openTraceStore();
+            if (traceStore == null) {
+                startupNote = appendStartupNote(startupNote, "Trace 数据库初始化失败，本次会话不记录执行轨迹");
+            } else {
+                Runtime.getRuntime().addShutdownHook(new Thread(traceStore::close, "nano-trace-shutdown"));
+            }
             try {
                 McpConfigBootstrapResult bootstrapResult = ensureDefaultMcpConfig(appHome());
                 if (!bootstrapResult.message().isBlank()) {
@@ -463,7 +473,7 @@ public class Main {
                             if (target.explicitModel()) {
                                 ensureProviderConfig(config, target.provider()).setModel(target.model());
                             }
-                            LlmClient newClient = LlmClientFactory.create(target.provider(), config);
+                            LlmClient newClient = TracingLlmClient.wrap(LlmClientFactory.create(target.provider(), config));
                             if (newClient == null) {
                                 ui.println("❌ 切换失败：未配置 " + target.provider() + " 的 API Key\n");
                             } else {
@@ -508,6 +518,11 @@ public class Main {
                     }
                     case AUDIT_TAIL -> {
                         printAuditTail(ui, reactAgent, command.payload());
+                        continue;
+                    }
+                    case TRACE -> {
+                        ui.println(TraceFormatter.format(traceStore, command.payload()));
+                        ui.println();
                         continue;
                     }
                     case SNAPSHOT -> {
@@ -704,9 +719,13 @@ public class Main {
                 }
                 SnapshotService snapshotService = reactAgent.getToolRegistry().getSnapshotService();
                 renderer.updateStatus(statusInfo(llmClient, hitlHandler, snapshotMode, mcpServerManager, skillRegistry));
+                String tracedMode = snapshotMode;
+                String tracedPrompt = submittedInput;
+                LlmClient tracedClient = llmClient;
                 String response = runWithCancelSupport(terminal,
                         ui,
-                        () -> snapshotService.runTurn(snapshotMode, taskInput, runTask::call));
+                        () -> runTraced(traceStore, tracedMode, tracedPrompt, tracedClient,
+                                () -> snapshotService.runTurn(tracedMode, taskInput, runTask::call)));
                 if (!"react".equals(snapshotMode)) {
                     renderer.updateStatus(statusInfo(llmClient, hitlHandler, "idle", mcpServerManager, skillRegistry));
                 }
@@ -735,7 +754,7 @@ public class Main {
 
     private static void startRuntimeApiAndBlock(String[] args) {
         NanoConfig config = NanoConfig.load();
-        LlmClient client = LlmClientFactory.createFromConfig(config);
+        LlmClient client = TracingLlmClient.wrap(LlmClientFactory.createFromConfig(config));
         if (client == null) {
             System.err.println("❌ 错误: 未找到可用的 API Key");
             System.exit(1);
@@ -785,6 +804,44 @@ public class Main {
         registry.setProjectPath(Path.of(".").toAbsolutePath().normalize().toString());
         Agent agent = new Agent(llmClient, registry);
         return agent.run(prompt);
+    }
+
+    private static TraceStore openTraceStore() {
+        try {
+            return TraceStore.openDefault();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String runTraced(TraceStore store, String mode, String prompt,
+                                    LlmClient llmClient, Callable<String> task) throws Exception {
+        TraceContext.Session session = TraceContext.start(
+                store,
+                mode,
+                prompt,
+                llmClient == null ? "unknown" : llmClient.getProviderName(),
+                llmClient == null ? "unknown" : llmClient.getModelName());
+        try {
+            String response = task.call();
+            if (session != null) {
+                if (response != null && response.startsWith("⏹")) {
+                    session.finish("cancelled", response);
+                } else if (response != null && response.startsWith("❌")) {
+                    session.finish("failed", response);
+                } else {
+                    session.finish("completed", null);
+                }
+            }
+            return response;
+        } catch (Exception e) {
+            if (session != null) {
+                session.finish("failed", e.getMessage());
+            }
+            throw e;
+        } finally {
+            TraceContext.clear(session);
+        }
     }
 
     private static DurableTaskManager openTaskManager(AtomicReference<LlmClient> llmClientRef) {
@@ -1247,6 +1304,8 @@ public class Main {
                 new SlashCommandHint("/config", "/config", "打开配置 palette（只读视图 + 切换提示）"),
                 new SlashCommandHint("/audit", "/audit", "查看今日最近 10 条危险工具审计"),
                 new SlashCommandHint("/audit ", "/audit [N]", "查看今日最近 N 条危险工具审计"),
+                new SlashCommandHint("/trace", "/trace", "查看最近 10 条 Agent 执行轨迹"),
+                new SlashCommandHint("/trace ", "/trace <trace_id>", "查看模型与工具事件时间线"),
                 new SlashCommandHint("/snapshot", "/snapshot", "查看最近 Side-Git 快照"),
                 new SlashCommandHint("/snapshot status", "/snapshot status", "查看 Side-Git 快照状态"),
                 new SlashCommandHint("/snapshot clean", "/snapshot clean", "清理当前项目 Side-Git 快照"),

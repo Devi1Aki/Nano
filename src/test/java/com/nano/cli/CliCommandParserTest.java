@@ -221,6 +221,14 @@ class CliCommandParserTest {
     }
 
     @Test
+    void parsesTraceCommands() {
+        assertEquals(CliCommandParser.CommandType.TRACE, CliCommandParser.parse("/trace").type());
+        assertNull(CliCommandParser.parse("/trace").payload());
+        assertEquals(CliCommandParser.CommandType.TRACE, CliCommandParser.parse("/trace trace_abc").type());
+        assertEquals("trace_abc", CliCommandParser.parse("/trace trace_abc").payload());
+    }
+
+    @Test
     void parsesSnapshotCommands() {
         assertEquals(CliCommandParser.CommandType.SNAPSHOT, CliCommandParser.parse("/snapshot").type());
         assertEquals("list", CliCommandParser.parse("/snapshot").payload());

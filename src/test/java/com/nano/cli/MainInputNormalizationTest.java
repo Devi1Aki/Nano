@@ -58,7 +58,7 @@ class MainInputNormalizationTest {
 
         assertTrue(lines.stream().anyMatch(line -> line.contains("███╗   ██╗")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("/\\_/\\")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("v1.1.1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("v1.2.0")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("Terminal Agent Harness")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("Tools 0 total")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("Tips for getting started")));

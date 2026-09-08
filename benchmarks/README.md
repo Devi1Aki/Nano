@@ -16,4 +16,4 @@
 mvn test -Dtest=BenchmarkCorpusTest -DskipTests=false
 ```
 
-后续 Eval Runner 会复制 fixture 到临时工作区执行任务，并记录成功率、工具步数、耗时、token 与失败类别；在执行器落地前，不在 README 或简历中填写推测指标。
+`BenchmarkCorpus` 已负责加载和约束校验，`EvalRunner` 支持注入用例执行器、结果判定器并输出 JSON 报告。真实 Agent 执行适配、隔离 fixture 和 LLM-as-Judge 尚未交付，因此不在 README 或简历中填写推测指标。

@@ -32,6 +32,7 @@ import com.nano.web.SearchProvider;
 import com.nano.web.SearchProviderFactory;
 import com.nano.web.SearchResult;
 import com.nano.web.WebFetcher;
+import com.nano.trace.TraceContext;
 
 import java.io.File;
 import java.io.InputStreamReader;
@@ -851,15 +852,14 @@ public class ToolRegistry {
             return List.of();
         }
         if (CancellationContext.isCancelled()) {
-            return invocations.stream()
+            List<ToolExecutionResult> results = invocations.stream()
                     .map(invocation -> ToolExecutionResult.failed(invocation, "用户取消了此次工具调用"))
                     .toList();
+            results.forEach(TraceContext::toolCompleted);
+            return results;
         }
         if (invocations.size() == 1) {
-            ToolInvocation invocation = invocations.get(0);
-            long startedAt = System.nanoTime();
-            ToolOutput output = executeToolOutput(invocation.name(), invocation.argumentsJson());
-            return List.of(ToolExecutionResult.completed(invocation, output, elapsedMillis(startedAt)));
+            return List.of(executeInvocation(invocations.get(0)));
         }
 
         int parallelism = Math.min(invocations.size(), MAX_PARALLEL_TOOLS);
@@ -875,9 +875,7 @@ public class ToolRegistry {
                         if (CancellationContext.isCancelled()) {
                             return ToolExecutionResult.failed(invocation, "用户取消了此次工具调用");
                         }
-                        long startedAt = System.nanoTime();
-                        ToolOutput output = executeToolOutput(invocation.name(), invocation.argumentsJson());
-                        return ToolExecutionResult.completed(invocation, output, elapsedMillis(startedAt));
+                        return executeInvocation(invocation);
                     })
                     .toList();
 
@@ -889,7 +887,9 @@ public class ToolRegistry {
                 ToolInvocation invocation = invocations.get(i);
                 Future<ToolExecutionResult> future = futures.get(i);
                 if (future.isCancelled()) {
-                    results.add(ToolExecutionResult.timedOut(invocation, toolBatchTimeoutSeconds));
+                    ToolExecutionResult result = ToolExecutionResult.timedOut(invocation, toolBatchTimeoutSeconds);
+                    TraceContext.toolCompleted(result);
+                    results.add(result);
                     continue;
                 }
 
@@ -897,24 +897,44 @@ public class ToolRegistry {
                     results.add(future.get());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    results.add(ToolExecutionResult.failed(invocation, "工具执行被中断"));
+                    ToolExecutionResult result = ToolExecutionResult.failed(invocation, "工具执行被中断");
+                    TraceContext.toolCompleted(result);
+                    results.add(result);
                 } catch (ExecutionException e) {
                     Throwable cause = e.getCause();
                     String message = cause == null || cause.getMessage() == null
                             ? "未知错误"
                             : cause.getMessage();
-                    results.add(ToolExecutionResult.failed(invocation, message));
+                    ToolExecutionResult result = ToolExecutionResult.failed(invocation, message);
+                    TraceContext.toolCompleted(result);
+                    results.add(result);
                 }
             }
             return results;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return invocations.stream()
+            List<ToolExecutionResult> results = invocations.stream()
                     .map(invocation -> ToolExecutionResult.failed(invocation, "工具批次执行被中断"))
                     .toList();
+            results.forEach(TraceContext::toolCompleted);
+            return results;
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    private ToolExecutionResult executeInvocation(ToolInvocation invocation) {
+        long startedAt = System.nanoTime();
+        ToolExecutionResult result;
+        try {
+            ToolOutput output = executeToolOutput(invocation.name(), invocation.argumentsJson());
+            result = ToolExecutionResult.completed(invocation, output, elapsedMillis(startedAt));
+        } catch (RuntimeException e) {
+            String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            result = ToolExecutionResult.failed(invocation, message);
+        }
+        TraceContext.toolCompleted(result);
+        return result;
     }
 
     private long elapsedMillis(long startedAtNanos) {

@@ -24,6 +24,7 @@ For the primary entry point, see `/AGENTS.md`.
 | 审计日志 | `~/.nano/audit/audit-YYYY-MM-DD.jsonl` | `NANO_AUDIT_DIR` / `-Dnano.audit.dir` |
 | Side-Git 快照 | `~/.nano/snapshots/<project_hash>/<worktree_hash>/.git` | `NANO_SNAPSHOT_DIR` / `-Dnano.snapshot.dir` |
 | 后台任务 | `~/.nano/tasks/tasks.db` | — |
+| Agent Trace | `~/.nano/traces/traces.db` | `NANO_TRACE_DIR` / `-Dnano.trace.dir` |
 
 ### Snapshot Config
 
@@ -205,6 +206,14 @@ scheme 白名单(http/https) / 主机黑名单(localhost/loopback/link-local/sit
 - GLM-5V-Turbo 通过 `/model glm-5v-turbo` 切换
 - 历史 image payload 替换为文本占位，避免旧截图消耗上下文
 
+### Trace + Eval (v1.2.0)
+
+- CLI turn 在 `runTraced()` 建立 trace，三种执行模式共享同一条生命周期。
+- `TracingLlmClient` 记录模型、耗时和 token；`ToolRegistry.executeTools()` 记录内置/MCP 工具状态、耗时与 `tool_call_id`。
+- 只持久化脱敏 prompt 摘要和调用元数据，不保存完整模型消息、工具参数或工具结果。
+- `/trace` 查看最近 10 条，`/trace <trace_id>` 查看事件时间线；数据库异常必须 fail-open。
+- `BenchmarkCorpus` + `EvalRunner` 已提供语料校验、执行/判定接口和 JSON 报告，真实 Agent adapter 与 LLM-as-Judge 尚未交付。
+
 ---
 
 ## Core File Descriptions
@@ -287,4 +296,4 @@ EMBEDDING_BASE_URL=http://localhost:11434
 
 不覆盖：真实 LLM 联调、真实 Embedding API、真实 MCP server 联调、终端完整手工体验。
 
-完整测试类列表：CliCommandParserTest / MainBrowserCommandTest / PlanReviewInputParserTest / MainInputNormalizationTest / ExecutionPlanTest / MemoryEntryTest / ConversationMemoryTest / LongTermMemoryTest / MemoryRetrieverTest / MemoryManagerTest / ExplicitMemoryHintsTest / ContextProfileTest / PlanExecuteAgentTest / AgentMemoryHintTest / AgentRoleTest / AgentMessageTest / AgentOrchestratorTest / EmbeddingClientTest / SearchResultTest / NetworkPolicyTest / HtmlExtractorTest / WebFetcherTest / SearchProviderFactoryTest / ZhipuSearchProviderTest / VectorStoreTest / CodeChunkerTest / CodeAnalyzerTest / CodeIndexTest / ApprovalPolicyTest / ApprovalResultTest / HitlToolRegistryTest / TerminalHitlHandlerTest / ToolRegistryTest / BrowserSessionTest / BrowserConnectivityCheckTest / SensitivePagePolicyTest / BrowserGuardTest / McpSchemaSanitizerTest / McpConfigLoaderTest / JsonRpcClientTest / McpToolBridgeTest / McpResourceCacheTest / AtMentionParserTest / AtMentionExpanderTest / AtMentionCompleterTest / NotificationRouterTest / PathGuardTest / CommandGuardTest / AuditLogTest / SkillFrontmatterParserTest / SkillRegistryTest / SkillStateStoreTest / SkillBuiltinExtractorTest / SkillContextBufferTest / SkillIndexFormatterTest / LoadSkillToolTest / SkillCommandHandlerTest
+完整测试类列表：CliCommandParserTest / MainBrowserCommandTest / PlanReviewInputParserTest / MainInputNormalizationTest / ExecutionPlanTest / MemoryEntryTest / ConversationMemoryTest / LongTermMemoryTest / MemoryRetrieverTest / MemoryManagerTest / ExplicitMemoryHintsTest / ContextProfileTest / PlanExecuteAgentTest / AgentMemoryHintTest / AgentRoleTest / AgentMessageTest / AgentOrchestratorTest / EmbeddingClientTest / SearchResultTest / NetworkPolicyTest / HtmlExtractorTest / WebFetcherTest / SearchProviderFactoryTest / ZhipuSearchProviderTest / VectorStoreTest / CodeChunkerTest / CodeAnalyzerTest / CodeIndexTest / ApprovalPolicyTest / ApprovalResultTest / HitlToolRegistryTest / TerminalHitlHandlerTest / ToolRegistryTest / BrowserSessionTest / BrowserConnectivityCheckTest / SensitivePagePolicyTest / BrowserGuardTest / McpSchemaSanitizerTest / McpConfigLoaderTest / JsonRpcClientTest / McpToolBridgeTest / McpResourceCacheTest / AtMentionParserTest / AtMentionExpanderTest / AtMentionCompleterTest / NotificationRouterTest / PathGuardTest / CommandGuardTest / AuditLogTest / TraceStoreTest / TracingLlmClientTest / ToolRegistryTraceTest / BenchmarkCorpusTest / EvalRunnerTest / SkillFrontmatterParserTest / SkillRegistryTest / SkillStateStoreTest / SkillBuiltinExtractorTest / SkillContextBufferTest / SkillIndexFormatterTest / LoadSkillToolTest / SkillCommandHandlerTest

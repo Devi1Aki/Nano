@@ -4,6 +4,16 @@
 
 ---
 
+## v1.2.0：Trace 与 Eval 基础设施 ✅
+
+- SQLite 持久化 turn、LLM、tool 三类事件，记录模式、模型、状态、耗时、Token、tool call 数和脱敏错误摘要。
+- `TracingLlmClient` 与 `ToolRegistry` 作为统一埋点出口，覆盖 ReAct、Plan-and-Execute、Multi-Agent、内置工具和 MCP 工具。
+- `/trace` 查看最近执行，`/trace <trace_id>` 回放事件时间线；Trace 写入失败不阻断 Agent。
+- `BenchmarkCorpus` 负责固定语料加载与约束校验，`EvalRunner` 支持可插拔执行器/判定器和 JSON 报告。
+- 尚未交付真实模型 benchmark 结果、LLM-as-Judge 和跨版本趋势面板，不能宣称通过率提升。
+
+---
+
 ## v1.1.1：工程基线与评测语料 ✅
 
 - 长期记忆迁移到 SQLite，并兼容首次启动导入旧版 JSON 数据。

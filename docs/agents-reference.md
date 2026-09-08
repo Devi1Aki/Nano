@@ -19,7 +19,7 @@ For the primary entry point, see `/AGENTS.md`.
 
 | 数据 | 默认路径 | 覆盖方式 |
 |------|----------|----------|
-| 长期记忆 | `~/.nano/memory/long_term_memory.json` | `-Dnano.memory.dir` |
+| 长期记忆 | `~/.nano/memory/long_term_memory.db`（SQLite；首次启动兼容迁移旧 JSON） | `-Dnano.memory.dir` |
 | RAG 索引 | `~/.nano/rag/codebase.db` | `-Dnano.rag.dir` |
 | 审计日志 | `~/.nano/audit/audit-YYYY-MM-DD.jsonl` | `NANO_AUDIT_DIR` / `-Dnano.audit.dir` |
 | Side-Git 快照 | `~/.nano/snapshots/<project_hash>/<worktree_hash>/.git` | `NANO_SNAPSHOT_DIR` / `-Dnano.snapshot.dir` |

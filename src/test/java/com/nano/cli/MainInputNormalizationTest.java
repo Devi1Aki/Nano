@@ -53,19 +53,19 @@ class MainInputNormalizationTest {
     }
 
     @Test
-    void startupBannerUsesOpenLayoutWithoutRightBorder() {
+    void startupBannerUsesFramedNanoAndCatLayout() {
         List<String> lines = Main.startupBannerLines();
 
-        assertTrue(lines.stream().anyMatch(line -> line.contains("Nano")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("π")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("v16.1.0")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("████████")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("███╗   ██╗")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("/\\_/\\")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("v1.1.1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Terminal Agent Harness")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Tools 0 total")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("Tips for getting started")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("@path")));
         assertTrue(lines.stream().noneMatch(line -> line.contains("for shortcuts")));
-        assertTrue(lines.stream().noneMatch(line -> line.contains("────────────────")));
-        assertTrue(lines.stream().noneMatch(line -> line.endsWith("║")),
-                "banner should not depend on a padded right border");
+        assertTrue(lines.stream().anyMatch(line -> line.contains("╭") && line.contains("╮")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("╰") && line.contains("╯")));
     }
 
     @Test

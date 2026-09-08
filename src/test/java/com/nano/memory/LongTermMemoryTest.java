@@ -1,11 +1,15 @@
 package com.nano.memory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -86,7 +90,8 @@ class LongTermMemoryTest {
         memory.store(new MemoryEntry("f1", "持久化测试内容", MemoryEntry.MemoryType.FACT, null, 10));
         memory.store(new MemoryEntry("s1", "摘要测试", MemoryEntry.MemoryType.SUMMARY, null, 8));
 
-        // 创建新实例，从磁盘加载
+        assertTrue(Files.exists(tempDir.resolve("long_term_memory.db")));
+
         LongTermMemory reloaded = new LongTermMemory(tempDir.toFile());
         assertEquals(2, reloaded.size());
         assertTrue(reloaded.retrieve("f1").isPresent());
@@ -99,5 +104,29 @@ class LongTermMemoryTest {
 
         LongTermMemory reloaded = new LongTermMemory(tempDir.toFile());
         assertEquals(timestamp, reloaded.retrieve("f1").orElseThrow().getTimestamp());
+    }
+
+    @Test
+    void shouldMigrateLegacyJsonOnlyOnce() throws Exception {
+        Path migrationDir = tempDir.resolve("legacy-migration");
+        Files.createDirectories(migrationDir);
+        Path legacyFile = migrationDir.resolve("long_term_memory.json");
+        new ObjectMapper().writeValue(legacyFile.toFile(), List.of(Map.of(
+                "id", "legacy-1",
+                "content", "旧版长期记忆",
+                "type", "FACT",
+                "timestamp", "2026-04-20T12:34:56Z",
+                "metadata", Map.of("source", "legacy"),
+                "tokenCount", 12
+        )));
+
+        LongTermMemory migrated = new LongTermMemory(migrationDir.toFile());
+        assertEquals(1, migrated.size());
+        assertEquals("legacy", migrated.retrieve("legacy-1").orElseThrow()
+                .getMetadata().get("source"));
+
+        migrated.clear();
+        LongTermMemory reloaded = new LongTermMemory(migrationDir.toFile());
+        assertEquals(0, reloaded.size(), "迁移标记应避免清空后再次导入旧 JSON");
     }
 }

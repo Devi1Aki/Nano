@@ -22,5 +22,8 @@ class BenchmarkCorpusTest {
         assertEquals(MODES, cases.stream().map(BenchmarkCase::mode).collect(java.util.stream.Collectors.toSet()));
         assertEquals(20, cases.stream().map(BenchmarkCase::id).distinct().count());
         assertTrue(cases.stream().allMatch(value -> !value.assertions().isEmpty()));
+        assertTrue(cases.stream()
+                .filter(value -> Set.of("editing", "safety").contains(value.category()))
+                .allMatch(value -> !value.checks().isEmpty()));
     }
 }

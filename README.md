@@ -16,7 +16,7 @@ Nano 是一只住在终端里的本地开发 Agent。它不会只是陪你聊天
 │ ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝                       │
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
-│      /\_/\      v1.3.0 · Terminal Agent Harness            │
+│      /\_/\      v1.4.0 · Terminal Agent Harness            │
 │     ( o.o )     Model glm-5.1 (glm)                        │
 │    ==/ . \==    Tools 75 total · MCP 4/4 · 2/2 skills      │
 │                 ReAct · Plan · MCP · Memory · RAG          │
@@ -79,7 +79,7 @@ src/main/java/com/nano/
 ├── render/      inline / lanterna / plain 渲染形态
 ├── runtime/     后台任务队列与本地 Runtime API
 ├── trace/       Agent turn、LLM 与工具事件追踪
-└── eval/        固定 benchmark、真实 Agent 执行、LLM-as-Judge 与报告对比
+└── eval/        隔离 benchmark、确定性检查、重复采样与报告对比
 ```
 
 ## Quick Start
@@ -97,7 +97,7 @@ cp .env.example .env
 
 # 编辑 .env，至少填写一个 API Key
 mvn clean package
-java -jar target/nano-1.3.0.jar
+java -jar target/nano-1.4.0.jar
 ```
 
 开发期也可以直接运行主类：
@@ -157,7 +157,8 @@ MCP 配置默认读取用户级 `~/.nano/mcp.json` 和项目级 `.nano/mcp.json`
 /trace                  查看最近 10 条 Agent 执行轨迹
 /trace <trace_id>       查看模型与工具事件时间线
 /eval list              查看固定 benchmark 用例
-/eval run <case-id>     执行单条用例并生成 JSON 报告
+/eval run <case-id>     在隔离工作区执行单条用例并生成 JSON 报告
+/eval run --category editing --all --repeat 3 --fail-under 80
 /eval reports           查看历史评测报告
 /eval compare           对比最近两份评测报告
 /snapshot               查看执行快照
@@ -259,7 +260,7 @@ Nano 可以作为本地 Runtime API 运行，便于接入 IDE 插件、自动化
 
 ```bash
 NANO_RUNTIME_API_KEY=your_local_api_key \
-java -jar target/nano-1.3.0.jar serve --http --port 8080
+java -jar target/nano-1.4.0.jar serve --http --port 8080
 ```
 
 主要端点：
@@ -290,6 +291,13 @@ mvn test -DskipTests=false
 ```
 
 ## Release Notes
+
+### v1.4.0
+
+- editing 与 safety benchmark 改为固定 Java fixture，并在独立临时工作区执行；所有 Eval Agent 使用临时 SQLite 记忆，评测结束后统一清理，不污染真实项目或用户长期记忆。
+- 为修改与安全用例增加文件内容、文件存在性和测试命令等确定性检查，与 LLM-as-Judge 联合判定，降低纯模型评分漂移。
+- `/eval run` 新增 `--repeat` 重复采样和 `--fail-under` 通过率门槛提示，报告记录每次 attempt、确定性检查结果以及 Trace 汇总的 Token、LLM 和工具调用指标。
+- Eval 报告对比增加 Token 与工具调用差值；仓库继续不预置未经真实模型运行的通过率。
 
 ### v1.3.0
 
@@ -342,6 +350,7 @@ mvn test -DskipTests=false
 - MCP OAuth、sampling 和 server 自动恢复仍属于后续增强。
 - 图片输入依赖具体模型是否支持多模态。
 - 代码检索效果依赖 embedding provider 和本地索引质量。
+- Eval 中 editing/safety 使用固定 fixture；retrieval/planning 会复制当前项目，MCP 用例为复用已连接 server 仍使用共享只读上下文。
 
 ## License
 

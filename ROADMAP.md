@@ -1,6 +1,17 @@
-# Nano 迭代路线图（23 期）
+# Nano 迭代路线图（24 期）
 
 从零开始，逐步构建生产级 Java Agent CLI
+
+---
+
+## v1.4.0：隔离 Eval 与稳定性采样 ✅
+
+- editing/safety case 使用仓库内固定 Java fixture，并复制到独立临时工作区执行；整个临时父目录在单例结束后清理，避免越界测试污染真实项目。
+- Eval Agent 使用临时 SQLite 长期记忆，避免用户级记忆影响结果或被评测任务写入。
+- 为文件修改、测试执行与安全边界加入确定性检查，最终结果采用 deterministic checks 与 LLM-as-Judge 联合判定。
+- `/eval run` 支持 `--repeat 1-10` 和 `--fail-under`，JSON 报告保存 attempt、检查明细、Token、LLM 调用数与 tool call 数。
+- 报告对比增加成本与执行步数差值；不预置未经真实模型执行的通过率。
+- 尚未交付独立 headless Eval 入口及基于退出码的 CI gate。
 
 ---
 
@@ -10,7 +21,7 @@
 - Benchmark 复用真实 ReAct、Plan-and-Execute、Multi-Agent、ToolRegistry、MCP、HITL 与策略链路，并关联独立 Trace。
 - 引入 LLM-as-Judge 逐条核验自然语言断言，输出 pass/fail/error 与判断依据；单例异常不终止评测集。
 - JSON 报告持久化到 `~/.nano/eval/`，支持列出历史和 baseline/candidate 对比；case 集合不一致时明确提示不可直接归因。
-- 尚未提供临时工作区 fixture 隔离和稳定性多次采样，editing/safety 用例执行前仍需关注 HITL 提示。
+- 该版本尚未提供临时工作区 fixture 隔离和稳定性多次采样；这些能力在 v1.4.0 补齐。
 
 ---
 

@@ -206,14 +206,15 @@ scheme 白名单(http/https) / 主机黑名单(localhost/loopback/link-local/sit
 - GLM-5V-Turbo 通过 `/model glm-5v-turbo` 切换
 - 历史 image payload 替换为文本占位，避免旧截图消耗上下文
 
-### Trace + Eval (v1.3.0)
+### Trace + Eval (v1.4.0)
 
 - CLI turn 在 `runTraced()` 建立 trace，三种执行模式共享同一条生命周期。
 - `TracingLlmClient` 记录模型、耗时和 token；`ToolRegistry.executeTools()` 记录内置/MCP 工具状态、耗时与 `tool_call_id`。
 - 只持久化脱敏 prompt 摘要和调用元数据，不保存完整模型消息、工具参数或工具结果。
 - `/trace` 查看最近 10 条，`/trace <trace_id>` 查看事件时间线；数据库异常必须 fail-open。
 - `/eval run` 将 `BenchmarkCorpus` 接到真实三模式 Agent；`LlmCaseJudge` 逐条判定断言，JSON 报告写入 `~/.nano/eval/` 并支持历史对比。
-- 批量评测必须显式 `--all`；editing/safety case 仍受 HITL 与策略层控制，当前没有临时 fixture 隔离和多次采样。
+- editing/safety case 使用固定 fixture 与临时工作区，并增加确定性检查；retrieval/planning 复制当前项目，MCP case 复用已连接 server。
+- 批量评测必须显式 `--all`；支持 `--repeat 1-10` 多次采样和 `--fail-under` 交互式门槛提示，报告包含 Trace 汇总指标。
 
 ---
 

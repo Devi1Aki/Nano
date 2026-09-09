@@ -61,6 +61,10 @@ public final class BenchmarkCorpus {
                     || benchmarkCase.assertions().stream().anyMatch(value -> value == null || value.isBlank())) {
                 throw new IllegalArgumentException("benchmark assertions cannot be empty: " + benchmarkCase.id());
             }
+            if (benchmarkCase.checks().stream().anyMatch(check -> check == null
+                    || check.type() == null || check.type().isBlank())) {
+                throw new IllegalArgumentException("benchmark checks must have a type: " + benchmarkCase.id());
+            }
             categories.add(benchmarkCase.category());
             modes.add(benchmarkCase.mode());
         }

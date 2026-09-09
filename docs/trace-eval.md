@@ -1,6 +1,6 @@
 # Trace 与 Eval
 
-Nano v1.2.0 将可观测性放在 Agent 主链路，而不是依赖零散控制台日志。
+Nano v1.3.0 将可观测性和可执行评测放在同一条 Agent 主链路，而不是依赖零散控制台日志或手工演示。
 
 ## Trace 链路
 
@@ -23,8 +23,19 @@ CLI 查询：
 /trace trace_ab12cd34ef56
 ```
 
-## Eval 边界
+## Eval 执行
 
-`benchmarks/cases.json` 提供 20 条固定任务语料，覆盖检索、修改、计划、MCP、安全治理和三种 Agent 模式。`BenchmarkCorpus` 校验语料结构，`EvalRunner` 负责顺序执行用例、隔离单例异常、调用可插拔判定器并生成 JSON 报告。
+`benchmarks/cases.json` 提供 20 条固定任务语料，覆盖检索、修改、计划、MCP、安全治理和三种 Agent 模式。`BenchmarkCorpus` 校验语料结构，`EvalRunner` 顺序执行用例并隔离单例异常。执行器复用真实 Agent、ToolRegistry、MCP、HITL、策略与 Side-Git 快照链路，每条用例生成独立 trace；`LlmCaseJudge` 根据执行输出逐条核验断言。
 
-当前尚未提供真实 Agent 执行适配器、临时 fixture 复制和 LLM-as-Judge，因此仓库不声明 pass rate。后续接入时应从 Trace 读取 token、工具步数和耗时，避免评测结果与实际执行链路割裂。
+```text
+/eval list
+/eval list --category mcp --mode react
+/eval run search-001
+/eval run --category retrieval --all
+/eval reports
+/eval compare previous latest
+```
+
+报告默认写入 `~/.nano/eval/`，也可通过 `NANO_EVAL_DIR` 或 `-Dnano.eval.dir` 改目录。比较不同 case 集合时会显示警告，避免把语料变化误判为模型或 Agent 退化。
+
+Eval 调用真实模型并可能触发真实工具。批量执行必须显式添加 `--all`；editing/safety 用例仍经过 HITL、PathGuard 和 CommandGuard。当前未实现临时 fixture 复制与多次采样，因此仓库不预置通过率，发布数据前应固定模型、配置、代码版本与 case 集合。

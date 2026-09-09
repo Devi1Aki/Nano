@@ -16,7 +16,7 @@ Nano 是一只住在终端里的本地开发 Agent。它不会只是陪你聊天
 │ ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝                       │
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
-│      /\_/\      v1.2.0 · Terminal Agent Harness            │
+│      /\_/\      v1.3.0 · Terminal Agent Harness            │
 │     ( o.o )     Model glm-5.1 (glm)                        │
 │    ==/ . \==    Tools 75 total · MCP 4/4 · 2/2 skills      │
 │                 ReAct · Plan · MCP · Memory · RAG          │
@@ -79,7 +79,7 @@ src/main/java/com/nano/
 ├── render/      inline / lanterna / plain 渲染形态
 ├── runtime/     后台任务队列与本地 Runtime API
 ├── trace/       Agent turn、LLM 与工具事件追踪
-└── eval/        固定 benchmark 语料与可插拔评测执行框架
+└── eval/        固定 benchmark、真实 Agent 执行、LLM-as-Judge 与报告对比
 ```
 
 ## Quick Start
@@ -97,7 +97,7 @@ cp .env.example .env
 
 # 编辑 .env，至少填写一个 API Key
 mvn clean package
-java -jar target/nano-1.2.0.jar
+java -jar target/nano-1.3.0.jar
 ```
 
 开发期也可以直接运行主类：
@@ -132,6 +132,9 @@ NANO_MCP_STARTUP_WAIT_SECONDS=8
 
 # Trace
 NANO_TRACE_DIR=/absolute/path/to/traces
+
+# Eval JSON reports
+NANO_EVAL_DIR=/absolute/path/to/eval-reports
 ```
 
 MCP 配置默认读取用户级 `~/.nano/mcp.json` 和项目级 `.nano/mcp.json`。项目里的 `.nano/` 通常不提交到 Git，用来保存本机私有的 MCP server 配置。
@@ -153,6 +156,10 @@ MCP 配置默认读取用户级 `~/.nano/mcp.json` 和项目级 `.nano/mcp.json`
 /audit [N]              查看最近 N 条危险操作审计
 /trace                  查看最近 10 条 Agent 执行轨迹
 /trace <trace_id>       查看模型与工具事件时间线
+/eval list              查看固定 benchmark 用例
+/eval run <case-id>     执行单条用例并生成 JSON 报告
+/eval reports           查看历史评测报告
+/eval compare           对比最近两份评测报告
 /snapshot               查看执行快照
 /restore <N>            回滚到最近第 N 个 pre-turn 快照
 /exit                   退出
@@ -252,7 +259,7 @@ Nano 可以作为本地 Runtime API 运行，便于接入 IDE 插件、自动化
 
 ```bash
 NANO_RUNTIME_API_KEY=your_local_api_key \
-java -jar target/nano-1.2.0.jar serve --http --port 8080
+java -jar target/nano-1.3.0.jar serve --http --port 8080
 ```
 
 主要端点：
@@ -283,6 +290,13 @@ mvn test -DskipTests=false
 ```
 
 ## Release Notes
+
+### v1.3.0
+
+- 将固定 benchmark 接入真实 ReAct、Plan-and-Execute 与 Multi-Agent 执行链路，并为每条用例关联 Trace。
+- 新增 `/eval list`、`/eval run`、`/eval reports` 和 `/eval compare`，支持按 case、category、mode 筛选及跨报告回归对比。
+- 引入 LLM-as-Judge，逐条核验自然语言断言；单例执行或判定失败会记录为 error，不中断整组评测。
+- Eval 仍复用 ToolRegistry、MCP、HITL 与策略层；批量执行必须显式添加 `--all`，仓库不预置未经运行的通过率。
 
 ### v1.2.0
 

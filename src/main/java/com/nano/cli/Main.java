@@ -10,6 +10,7 @@ import com.nano.browser.BrowserMode;
 import com.nano.browser.BrowserSession;
 import com.nano.browser.SensitivePagePolicy;
 import com.nano.config.NanoConfig;
+import com.nano.eval.EvalCoordinator;
 import com.nano.hitl.HitlHandler;
 import com.nano.hitl.HitlToolRegistry;
 import com.nano.hitl.SwitchableHitlHandler;
@@ -89,7 +90,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Nano v1.2.0 - Terminal-First Agent IDE
+ * Nano v1.3.0 - Terminal-First Agent IDE
  * 支持 ReAct、Plan-and-Execute、Memory、RAG、Multi-Agent、HITL、并行工具调用、多模型切换、MCP、CDP 会话复用
  * 第 15 期新增：Skill 系统（三层加载 + load_skill 工具 + SkillContextBuffer 注入）、内置 web-access skill
  * 第 16 期新增：TUI 界面（Lanterna 3）、文件树浏览、代码高亮、对话历史可视化、配置管理面板
@@ -100,7 +101,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * HITL 增强：路径围栏（PathGuard）、命令快速拒绝（CommandGuard）、操作审计链（AuditLog）—— 见 com.nano.policy
  */
 public class Main {
-    private static final String VERSION = "1.2.0";
+    private static final String VERSION = "1.3.0";
     private static final String ENV_FILE = ".env";
     private static final String NANO_HOME_PROPERTY = "nano.home";
     private static final String LOG_DIR_PROPERTY = "nano.log.dir";
@@ -523,6 +524,11 @@ public class Main {
                     case TRACE -> {
                         ui.println(TraceFormatter.format(traceStore, command.payload()));
                         ui.println();
+                        continue;
+                    }
+                    case EVAL -> {
+                        new EvalCoordinator(llmClient, reactAgent, mcpServerManager,
+                                skillRegistry, traceStore, renderer).handle(command.payload(), ui);
                         continue;
                     }
                     case SNAPSHOT -> {
@@ -1306,6 +1312,11 @@ public class Main {
                 new SlashCommandHint("/audit ", "/audit [N]", "查看今日最近 N 条危险工具审计"),
                 new SlashCommandHint("/trace", "/trace", "查看最近 10 条 Agent 执行轨迹"),
                 new SlashCommandHint("/trace ", "/trace <trace_id>", "查看模型与工具事件时间线"),
+                new SlashCommandHint("/eval", "/eval", "查看可执行 benchmark 命令"),
+                new SlashCommandHint("/eval list", "/eval list", "查看固定 benchmark 用例"),
+                new SlashCommandHint("/eval run ", "/eval run <case-id>", "运行真实 Agent 评测用例"),
+                new SlashCommandHint("/eval reports", "/eval reports", "查看历史 Eval 报告"),
+                new SlashCommandHint("/eval compare", "/eval compare", "比较最近两份 Eval 报告"),
                 new SlashCommandHint("/snapshot", "/snapshot", "查看最近 Side-Git 快照"),
                 new SlashCommandHint("/snapshot status", "/snapshot status", "查看 Side-Git 快照状态"),
                 new SlashCommandHint("/snapshot clean", "/snapshot clean", "清理当前项目 Side-Git 快照"),

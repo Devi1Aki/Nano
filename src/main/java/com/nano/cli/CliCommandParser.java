@@ -23,6 +23,7 @@ final class CliCommandParser {
         POLICY_STATUS,
         AUDIT_TAIL,
         TRACE,
+        EVAL,
         SNAPSHOT,
         RESTORE_SNAPSHOT,
         MCP_LIST,
@@ -182,6 +183,14 @@ final class CliCommandParser {
 
         if (trimmed.regionMatches(true, 0, "/trace ", 0, 7)) {
             return new ParsedCommand(CommandType.TRACE, trimmed.substring(7).trim());
+        }
+
+        if (trimmed.equalsIgnoreCase("/eval")) {
+            return new ParsedCommand(CommandType.EVAL, null);
+        }
+
+        if (trimmed.regionMatches(true, 0, "/eval ", 0, 6)) {
+            return new ParsedCommand(CommandType.EVAL, trimmed.substring(6).trim());
         }
 
         if (trimmed.equalsIgnoreCase("/snapshot")) {

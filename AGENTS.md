@@ -12,9 +12,9 @@
 
 - 项目名：`Nano`
 - 定位：面向商业使用的 Java Agent CLI 产品，对标 Claude Code
-- 已交付 21 期（ReAct → Plan+DAG → Memory → RAG → Multi-Agent → HITL → 并行工具 → 多模型 → 联网 → MCP 核心 → MCP 高级 → 长上下文 → Chrome DevTools → CDP 会话复用 → Skill → TUI → LSP 诊断 → Side-Git 快照 → Prompt 分层 → Runtime API → 图片输入）
-- 下一步：OAuth / sampling / recovery 作为后续 MCP 增强
-- Banner 版本：`v1.2.0`，Maven 产物：`nano-1.2.0.jar`
+- 已交付 23 期（ReAct → Plan+DAG → Memory → RAG → Multi-Agent → HITL → 并行工具 → 多模型 → 联网 → MCP 核心 → MCP 高级 → 长上下文 → Chrome DevTools → CDP 会话复用 → Skill → TUI → LSP 诊断 → Side-Git 快照 → Prompt 分层 → Runtime API → 图片输入 → Trace → Eval）
+- 下一步：Eval fixture 隔离与稳定性采样；OAuth / sampling / recovery 作为后续 MCP 增强
+- Banner 版本：`v1.3.0`，Maven 产物：`nano-1.3.0.jar`
 
 ## 运行前提
 
@@ -26,7 +26,7 @@
 ```bash
 cp .env.example .env
 mvn clean package        # 默认跳过测试，优先产出可手工验收 jar
-java -jar target/nano-1.2.0.jar
+java -jar target/nano-1.3.0.jar
 mvn test -Pquick          # 常规回归
 mvn test -Pphase16-smoke  # TUI 相关
 mvn test -Dtest=XxxTest -DskipTests=false   # 针对性
@@ -64,7 +64,7 @@ src/main/java/com/nano/
 ├── image/       ImageReferenceParser
 ├── runtime/     api/ (RuntimeApiServer) + task/ (DurableTaskManager)
 ├── trace/       TraceStore, TraceContext, TraceFormatter
-├── eval/        BenchmarkCorpus, EvalRunner
+├── eval/        BenchmarkCorpus, EvalRunner, LlmCaseJudge, EvalReportStore
 ├── snapshot/    SideGitManager, SnapshotService
 ├── tool/        ToolRegistry
 ├── mcp/         McpClient, McpServerManager, transport/, resources/, mention/
@@ -88,6 +88,7 @@ src/main/java/com/nano/
 - ReAct 正常结束后不再把 `📊 Token: ...` 打进正文区；token/cost/elapsed 会保留在底部强状态行，phase 回到 `idle`。
 - 每轮 CLI Agent 任务通过 `TraceContext` 建立独立 trace；`TracingLlmClient` 记录模型耗时与 token，`ToolRegistry.executeTools()` 记录工具耗时与状态，完整内容和工具结果不落盘。
 - Trace 默认写入 `~/.nano/traces/traces.db`；`/trace` 查看最近记录，`/trace <trace_id>` 查看事件时间线。Trace 写入必须 fail-open，不能影响 Agent 主流程。
+- `/eval run <case-id>` 复用真实 Agent/ToolRegistry/MCP/HITL 链路并由 LLM-as-Judge 判定；批量运行必须显式添加 `--all`，报告默认写入 `~/.nano/eval/`。
 - 默认 CLI 启动路径应尽早建立 `Terminal -> LineReader -> Renderer`，启动 Banner、模型加载、MCP 启动、Skill summary、ReAct 提示和退出提示都应走 `Renderer.stream()`；除 fatal bootstrap / runtime API / legacy TUI 降级外，不要在交互主路径新增裸 `System.out.println`。
 - 启动期 MCP 不得阻塞首屏：CLI 默认最多等待 8 秒（`NANO_MCP_STARTUP_WAIT_SECONDS` / `-Dnano.mcp.startup.wait.seconds` 可调），超时后保留未完成 server 为 `STARTING` 并后台继续初始化；`/mcp` 查看最新状态。
 - `LineReader` 使用 `NanoHighlighter` 做输入实时高亮：slash 命令、`@` 引用、`@image:`、`@clipboard`、敏感词和明显危险 shell 片段会在编辑阶段被标记；不要把这类视觉提示混入最终提交文本。

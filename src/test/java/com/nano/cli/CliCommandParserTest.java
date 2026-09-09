@@ -229,6 +229,14 @@ class CliCommandParserTest {
     }
 
     @Test
+    void parsesEvalCommands() {
+        assertEquals(CliCommandParser.CommandType.EVAL, CliCommandParser.parse("/eval").type());
+        assertNull(CliCommandParser.parse("/eval").payload());
+        assertEquals(CliCommandParser.CommandType.EVAL, CliCommandParser.parse("/eval run search-001").type());
+        assertEquals("run search-001", CliCommandParser.parse("/eval run search-001").payload());
+    }
+
+    @Test
     void parsesSnapshotCommands() {
         assertEquals(CliCommandParser.CommandType.SNAPSHOT, CliCommandParser.parse("/snapshot").type());
         assertEquals("list", CliCommandParser.parse("/snapshot").payload());

@@ -1,6 +1,16 @@
-# Nano 迭代路线图（21 期）
+# Nano 迭代路线图（23 期）
 
 从零开始，逐步构建生产级 Java Agent CLI
+
+---
+
+## v1.3.0：可执行 Eval 回归闭环 ✅
+
+- `/eval list` 支持按 category、mode 查看固定语料，`/eval run` 支持单 case 或显式 `--all` 批量执行。
+- Benchmark 复用真实 ReAct、Plan-and-Execute、Multi-Agent、ToolRegistry、MCP、HITL 与策略链路，并关联独立 Trace。
+- 引入 LLM-as-Judge 逐条核验自然语言断言，输出 pass/fail/error 与判断依据；单例异常不终止评测集。
+- JSON 报告持久化到 `~/.nano/eval/`，支持列出历史和 baseline/candidate 对比；case 集合不一致时明确提示不可直接归因。
+- 尚未提供临时工作区 fixture 隔离和稳定性多次采样，editing/safety 用例执行前仍需关注 HITL 提示。
 
 ---
 
@@ -10,7 +20,7 @@
 - `TracingLlmClient` 与 `ToolRegistry` 作为统一埋点出口，覆盖 ReAct、Plan-and-Execute、Multi-Agent、内置工具和 MCP 工具。
 - `/trace` 查看最近执行，`/trace <trace_id>` 回放事件时间线；Trace 写入失败不阻断 Agent。
 - `BenchmarkCorpus` 负责固定语料加载与约束校验，`EvalRunner` 支持可插拔执行器/判定器和 JSON 报告。
-- 尚未交付真实模型 benchmark 结果、LLM-as-Judge 和跨版本趋势面板，不能宣称通过率提升。
+- 该版本尚未交付真实 Agent adapter 与 LLM-as-Judge；这些能力在 v1.3.0 补齐。
 
 ---
 

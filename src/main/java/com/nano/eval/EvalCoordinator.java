@@ -3,7 +3,10 @@ package com.nano.eval;
 import com.nano.agent.Agent;
 import com.nano.agent.AgentOrchestrator;
 import com.nano.agent.PlanExecuteAgent;
+import com.nano.hitl.HitlToolRegistry;
 import com.nano.llm.LlmClient;
+import com.nano.memory.LongTermMemory;
+import com.nano.memory.MemoryManager;
 import com.nano.mcp.McpServerManager;
 import com.nano.render.Renderer;
 import com.nano.skill.SkillRegistry;
@@ -83,7 +86,7 @@ public final class EvalCoordinator {
             return;
         }
         if (selected.stream().anyMatch(EvalCoordinator::mayModifyWorkspace)) {
-            ui.println("⚠️ 选中的 editing/safety 用例可能请求修改文件或执行命令，HITL 与策略层仍然生效。");
+            ui.println("🧪 editing/safety 用例将在固定临时 fixture 中运行，HITL 与策略层仍然生效。");
         }
 
         ToolRegistry registry = reactAgent.getToolRegistry();
@@ -94,15 +97,21 @@ public final class EvalCoordinator {
                 },
                 new LlmCaseJudge(llmClient));
         try {
-            EvalRunner.EvalReport report = runner.run(selected);
+            EvalRunner.EvalReport report = runner.run(selected, request.repeat());
             Path output = reportStore.write(report);
             ui.println(EvalFormatter.report(report, output));
             for (EvalRunner.CaseResult result : report.results()) {
-                ui.println("  " + result.caseId() + "  " + result.status()
+                ui.println("  " + result.caseId() + "#" + result.attempt() + "  " + result.status()
                         + (result.traceId() == null ? "" : "  " + result.traceId()));
                 if (result.error() != null) {
                     ui.println("    " + result.error());
                 }
+            }
+            if (request.failUnder() >= 0D) {
+                boolean passedGate = report.passRate() >= request.failUnder();
+                ui.println((passedGate ? "✅" : "❌") + " Eval gate: "
+                        + String.format("%.1f%%", report.passRate() * 100D) + " / required "
+                        + String.format("%.1f%%", request.failUnder() * 100D));
             }
         } finally {
             registry.setContextProfile(reactAgent.getMemoryManager().getContextProfile());
@@ -112,49 +121,100 @@ public final class EvalCoordinator {
 
     private EvalRunner.ExecutionResult executeCase(BenchmarkCase benchmarkCase,
                                                     ToolRegistry registry) throws Exception {
-        CapturingRenderer capture = new CapturingRenderer();
-        registry.setWriteFileObserver((path, beforeAfter) ->
-                capture.appendDiff(path, beforeAfter[0], beforeAfter[1]));
-        Agent evalAgent = new Agent(llmClient, registry);
-        evalAgent.setRenderer(capture);
-        evalAgent.setExternalContextSupplier(mcpServerManager::resourceIndexForPrompt);
-        evalAgent.setSkillRegistry(skillRegistry);
+        Path projectRoot = Path.of(registry.getProjectPath());
+        try (EvalWorkspace workspace = EvalWorkspace.prepare(benchmarkCase, projectRoot)) {
+            ToolRegistry caseRegistry = registryForWorkspace(registry, workspace);
+            try {
+                CapturingRenderer capture = new CapturingRenderer();
+                caseRegistry.setWriteFileObserver((path, beforeAfter) ->
+                        capture.appendDiff(path, beforeAfter[0], beforeAfter[1]));
+                var profile = reactAgent.getMemoryManager().getContextProfile();
+                MemoryManager evalMemory = new MemoryManager(
+                        llmClient,
+                        profile.shortTermMemoryBudget(),
+                        profile.maxContextWindow(),
+                        new LongTermMemory(workspace.statePath().toFile()));
+                Agent evalAgent = new Agent(llmClient, caseRegistry, evalMemory);
+                evalAgent.setRenderer(capture);
+                evalAgent.setExternalContextSupplier(mcpServerManager::resourceIndexForPrompt);
+                evalAgent.setSkillRegistry(skillRegistry);
 
-        Callable<String> task = switch (benchmarkCase.mode()) {
-            case "plan" -> planTask(benchmarkCase, registry, evalAgent, capture);
-            case "team" -> teamTask(benchmarkCase, registry, evalAgent, capture);
-            default -> () -> evalAgent.run(benchmarkCase.prompt());
-        };
+                Callable<String> task = switch (benchmarkCase.mode()) {
+                    case "plan" -> planTask(benchmarkCase, caseRegistry, evalAgent, capture);
+                    case "team" -> teamTask(benchmarkCase, caseRegistry, evalAgent, capture);
+                    default -> () -> evalAgent.run(benchmarkCase.prompt());
+                };
 
-        TraceContext.Session session = TraceContext.start(
-                traceStore,
-                "eval-" + benchmarkCase.mode(),
-                benchmarkCase.prompt(),
-                llmClient.getProviderName(),
-                llmClient.getModelName());
-        String result = null;
-        try {
-            result = registry.getSnapshotService().runTurn(
-                    "eval-" + benchmarkCase.mode(), benchmarkCase.prompt(), task::call);
-            if (session != null) {
-                session.finish(result != null && result.startsWith("❌") ? "failed" : "completed", null);
+                TraceContext.Session session = TraceContext.start(
+                        traceStore,
+                        "eval-" + benchmarkCase.mode(),
+                        benchmarkCase.prompt(),
+                        llmClient.getProviderName(),
+                        llmClient.getModelName());
+                String result = null;
+                try {
+                    result = workspace.isolated()
+                            ? task.call()
+                            : caseRegistry.getSnapshotService().runTurn(
+                            "eval-" + benchmarkCase.mode(), benchmarkCase.prompt(), task::call);
+                    if (session != null) {
+                        session.finish(result != null && result.startsWith("❌") ? "failed" : "completed", null);
+                    }
+                } catch (Exception e) {
+                    if (session != null) {
+                        session.finish("failed", e.getMessage());
+                    }
+                    throw e;
+                } finally {
+                    TraceContext.clear(session);
+                    capture.close();
+                    if (!workspace.isolated()) {
+                        registry.setWriteFileObserver((path, beforeAfter) ->
+                                mainRenderer.appendDiff(path, beforeAfter[0], beforeAfter[1]));
+                    }
+                }
+                String captured = appendResult(capture.output(), result);
+                captured = captured + (captured.endsWith("\n") ? "" : "\n") + workspace.diffSummary();
+                EvalCheckRunner.VerificationResult verification =
+                        new EvalCheckRunner().verify(benchmarkCase, workspace.path(), captured);
+                EvalRunner.EvalMetrics metrics = metrics(session);
+                return new EvalRunner.ExecutionResult(
+                        captured, session == null ? null : session.traceId(), metrics, verification);
+            } finally {
+                if (workspace.isolated()) {
+                    caseRegistry.getSnapshotService().close();
+                }
             }
-        } catch (Exception e) {
-            if (session != null) {
-                session.finish("failed", e.getMessage());
-            }
-            throw e;
-        } finally {
-            TraceContext.clear(session);
-            capture.close();
-            registry.setWriteFileObserver((path, beforeAfter) ->
-                    mainRenderer.appendDiff(path, beforeAfter[0], beforeAfter[1]));
         }
-        String captured = capture.output();
-        if (result != null && !result.isBlank() && !captured.contains(result)) {
-            captured = captured + (captured.endsWith("\n") ? "" : "\n") + result;
+    }
+
+    private ToolRegistry registryForWorkspace(ToolRegistry shared, EvalWorkspace workspace) {
+        if (!workspace.isolated()) {
+            return shared;
         }
-        return new EvalRunner.ExecutionResult(captured, session == null ? null : session.traceId());
+        ToolRegistry isolated = shared instanceof HitlToolRegistry hitl
+                ? new HitlToolRegistry(hitl.getHitlHandler())
+                : new ToolRegistry();
+        isolated.setProjectPath(workspace.path().toString());
+        return isolated;
+    }
+
+    private EvalRunner.EvalMetrics metrics(TraceContext.Session session) {
+        if (session == null || traceStore == null) {
+            return EvalRunner.EvalMetrics.empty();
+        }
+        var summary = traceStore.find(session.traceId());
+        return summary == null ? EvalRunner.EvalMetrics.empty() : new EvalRunner.EvalMetrics(
+                summary.inputTokens(), summary.outputTokens(), summary.cachedInputTokens(),
+                summary.llmCalls(), summary.toolCalls());
+    }
+
+    private static String appendResult(String captured, String result) {
+        String output = captured == null ? "" : captured;
+        if (result != null && !result.isBlank() && !output.contains(result)) {
+            output = output + (output.endsWith("\n") ? "" : "\n") + result;
+        }
+        return output;
     }
 
     private Callable<String> planTask(BenchmarkCase benchmarkCase, ToolRegistry registry,

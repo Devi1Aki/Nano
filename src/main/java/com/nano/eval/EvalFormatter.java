@@ -14,7 +14,7 @@ public final class EvalFormatter {
                 Eval 命令：
                   /eval list [--category retrieval] [--mode react]
                   /eval run <case-id>
-                  /eval run --category <name> --all
+                  /eval run --category <name> --all [--repeat 3] [--fail-under 80]
                   /eval reports
                   /eval compare [previous] [latest]
 
@@ -39,6 +39,9 @@ public final class EvalFormatter {
         return "Eval 完成: " + report.passed() + "/" + report.total() + " passed, "
                 + report.failed() + " failed, " + report.errors() + " errors, "
                 + String.format("%.1f%%", report.passRate() * 100D) + ", " + report.durationMs() + " ms\n"
+                + "样本: " + report.uniqueCases() + " cases x " + report.repeat()
+                + " runs · tokens " + report.inputTokens() + " in / " + report.outputTokens()
+                + " out · tools " + report.toolCalls() + "\n"
                 + "报告: " + path.toAbsolutePath();
     }
 
@@ -66,7 +69,12 @@ public final class EvalFormatter {
                 + "  candidate " + candidate.passed() + "/" + candidate.total() + "  "
                 + String.format("%.1f%%", candidate.passRate() * 100D) + "  " + candidatePath.getFileName() + "\n"
                 + "  pass-rate delta " + String.format("%+.1f pp", delta)
-                + ", duration delta " + String.format("%+d ms", durationDelta)
+                + ", duration delta " + String.format("%+d ms", durationDelta) + "\n"
+                + "  token delta " + String.format("%+d in / %+d out",
+                candidate.inputTokens() - baseline.inputTokens(),
+                candidate.outputTokens() - baseline.outputTokens())
+                + ", tool-call delta " + String.format("%+d",
+                candidate.toolCalls() - baseline.toolCalls())
                 + comparability;
     }
 

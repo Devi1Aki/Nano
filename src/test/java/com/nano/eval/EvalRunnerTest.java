@@ -39,4 +39,25 @@ class EvalRunnerTest {
         assertTrue(Files.readString(output).contains("trace_search-001"));
     }
 
+    @Test
+    void repeatsCasesAndAggregatesTraceMetrics() {
+        BenchmarkCase benchmarkCase = new BenchmarkCase(
+                "case-1", "retrieval", "react", "prompt", List.of("answer"));
+        EvalRunner runner = new EvalRunner(
+                ignored -> new EvalRunner.ExecutionResult(
+                        "answer", "trace_1", new EvalRunner.EvalMetrics(10, 4, 2, 1, 3),
+                        new EvalCheckRunner.VerificationResult(true, List.of("PASS fixture"))),
+                (ignored, execution) -> new EvalRunner.JudgeResult(true, List.of("passed")));
+
+        EvalRunner.EvalReport report = runner.run(List.of(benchmarkCase), 3);
+
+        assertEquals(1, report.uniqueCases());
+        assertEquals(3, report.repeat());
+        assertEquals(3, report.total());
+        assertEquals(List.of(1, 2, 3), report.results().stream().map(EvalRunner.CaseResult::attempt).toList());
+        assertEquals(30, report.inputTokens());
+        assertEquals(12, report.outputTokens());
+        assertEquals(9, report.toolCalls());
+    }
+
 }

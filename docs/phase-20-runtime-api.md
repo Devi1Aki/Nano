@@ -30,7 +30,7 @@
 
 ```bash
 NANO_RUNTIME_API_KEY=your_local_api_key \
-java -jar target/nano-1.3.0.jar serve --http --port 8080
+java -jar target/nano-1.4.0.jar serve --http --port 8080
 ```
 
 安全策略：
@@ -74,5 +74,5 @@ mvn test -Dtest=DurableTaskManagerTest,RuntimeApiServerTest,CliCommandParserTest
 mvn test -Pquick
 mvn test
 mvn -q clean package -DskipTests
-NANO_RUNTIME_API_KEY=test java -jar target/nano-1.3.0.jar serve --http --port 0
+NANO_RUNTIME_API_KEY=test java -jar target/nano-1.4.0.jar serve --http --port 0
 ```

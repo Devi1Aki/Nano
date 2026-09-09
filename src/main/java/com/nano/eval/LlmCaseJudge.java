@@ -32,11 +32,13 @@ public final class LlmCaseJudge implements EvalRunner.CaseJudge {
                 用例: %s
                 用户任务: %s
                 断言: %s
+                确定性校验: %s
                 <execution_output>
                 %s
                 </execution_output>
                 """.formatted(benchmarkCase.id(), benchmarkCase.prompt(),
-                String.join(" | ", benchmarkCase.assertions()), evidence);
+                String.join(" | ", benchmarkCase.assertions()),
+                String.join(" | ", execution.verification().details()), evidence);
         LlmClient.ChatResponse response = llmClient.chat(
                 List.of(LlmClient.Message.system("你只负责评测并输出合法 JSON。"), LlmClient.Message.user(prompt)),
                 List.of());
@@ -49,7 +51,9 @@ public final class LlmCaseJudge implements EvalRunner.CaseJudge {
         if (detailNode != null && detailNode.isArray()) {
             detailNode.forEach(item -> details.add(item.asText()));
         }
-        return new EvalRunner.JudgeResult(root.get("passed").asBoolean(), details);
+        details.addAll(execution.verification().details());
+        return new EvalRunner.JudgeResult(
+                root.get("passed").asBoolean() && execution.verification().passed(), details);
     }
 
     static String stripJsonFence(String content) throws IOException {

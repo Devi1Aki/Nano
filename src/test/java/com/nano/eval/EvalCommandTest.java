@@ -38,4 +38,19 @@ class EvalCommandTest {
         assertTrue(selected.stream().allMatch(item -> "mcp".equals(item.category())));
         assertTrue(selected.stream().allMatch(item -> "react".equals(item.mode())));
     }
+
+    @Test
+    void parsesRepeatAndPassRateGate() {
+        EvalCommand.Request request = EvalCommand.parse(
+                "run --category editing --all --repeat 3 --fail-under=80");
+
+        assertEquals(3, request.repeat());
+        assertEquals(0.8D, request.failUnder());
+    }
+
+    @Test
+    void clampsRepeatToSupportedRange() {
+        assertEquals(10, EvalCommand.parse("run search-001 --repeat=99").repeat());
+        assertEquals(1, EvalCommand.parse("run search-001 --repeat=0").repeat());
+    }
 }

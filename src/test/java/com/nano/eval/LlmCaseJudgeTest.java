@@ -40,6 +40,22 @@ class LlmCaseJudgeTest {
         assertFalse(result.passed());
     }
 
+    @Test
+    void deterministicFailureOverridesPositiveModelJudgment() throws Exception {
+        LlmCaseJudge judge = new LlmCaseJudge(new FixedClient(
+                "{\"passed\":true,\"details\":[\"looks good\"]}"));
+        BenchmarkCase benchmarkCase = new BenchmarkCase(
+                "case-3", "editing", "react", "edit", List.of("tests pass"));
+        EvalRunner.ExecutionResult execution = new EvalRunner.ExecutionResult(
+                "done", "trace_3", EvalRunner.EvalMetrics.empty(),
+                new EvalCheckRunner.VerificationResult(false, List.of("FAIL mvn test")));
+
+        EvalRunner.JudgeResult result = judge.judge(benchmarkCase, execution);
+
+        assertFalse(result.passed());
+        assertTrue(result.details().contains("FAIL mvn test"));
+    }
+
     private record FixedClient(String response) implements LlmClient {
         @Override
         public ChatResponse chat(List<Message> messages, List<Tool> tools) {
